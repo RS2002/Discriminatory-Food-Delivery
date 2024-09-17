@@ -1,0 +1,173 @@
+from Worker import Buffer, Worker
+from Centeral_Platform import Platform, reward_func_generator
+from Order_Env import Demand
+import argparse
+import tqdm
+import torch
+import numpy as np
+
+def get_args():
+    parser = argparse.ArgumentParser(description='')
+
+    parser.add_argument('--batch_size', type=int, default=512)
+    parser.add_argument('--train_times', type=int, default=20)
+    parser.add_argument('--lr', type=float, default=0.0001)
+    parser.add_argument('--gamma', type=float, default=0.99)
+    parser.add_argument('--eps_clip', type=float, default=0.2)
+    parser.add_argument('--max_step', type=int, default=60) #test: 10
+    parser.add_argument('--eval_episode', type=int, default=25)
+    parser.add_argument('--converge_epoch', type=int, default=3)
+    parser.add_argument('--minimum_episode', type=int, default=500)
+    parser.add_argument('--worker_num', type=int, default=1000) #test: 50
+    parser.add_argument('--buffer_capacity', type=int, default=1e5)
+    parser.add_argument('--demand_sample_rate', type=float, default=0.95)
+    parser.add_argument('--order_max_wait_time', type=float, default=5.0)
+    parser.add_argument('--order_threshold', type=float, default=40.0)
+    parser.add_argument('--reward_parameter', type=float, nargs='+', default=[10.0,5.0,1.0,2.0,1.0,4.0])
+    parser.add_argument('--reject_punishment', type=float, default=2.0)
+    parser.add_argument('--epsilon', type=float, default=1.0)
+    parser.add_argument('--epsilon_decay_rate', type=float, default=0.99)
+    parser.add_argument('--epsilon_final', type=float, default=0.0005)
+
+
+    parser.add_argument("--cpu", action="store_true",default=False)
+    parser.add_argument("--cuda", type=str, default='0')
+
+    parser.add_argument("--model_path",type=str,default=None)
+    parser.add_argument("--demand_path",type=str,default="./data/demand_evening_onehour.csv")
+    parser.add_argument("--zone_table_path",type=str,default="./data/zone_table.csv")
+
+    args = parser.parse_args()
+    return args
+
+
+
+def group_generation_func1(worker_num):
+    one_group_worker = worker_num // 2
+
+    group = [0]*one_group_worker
+    group.extend([1]*one_group_worker)
+    group = np.array(group)
+    capacity = np.array([3.0]*worker_num)
+
+    reservation_value_0 = np.random.normal(loc=0.95, scale=0.01, size=one_group_worker)
+    reservation_value_1 = np.random.normal(loc=0.98, scale=0.01, size=one_group_worker)
+    reservation_value = np.concatenate([reservation_value_0,reservation_value_1])
+    reservation_value[reservation_value<0.9]=0.9
+
+    speed_0 = np.random.normal(loc=0.98, scale=0.01, size=one_group_worker)
+    speed_1 = np.random.normal(loc=1.00, scale=0.01, size=one_group_worker)
+    speed = np.concatenate([speed_0,speed_1])
+    speed[speed<0.9]=0.9
+
+    return reservation_value, speed, capacity, group
+
+
+def main():
+    args = get_args()
+    device_name = "cuda:"+args.cuda
+    device = torch.device(device_name if torch.cuda.is_available() and not args.cpu else 'cpu')
+
+    exploration_rate = args.epsilon
+    epsilon_decay_rate = args.epsilon_decay_rate
+    epsilon_final = args.epsilon_final
+
+    platform = Platform(discount_factor = args.gamma)
+    demand = Demand(demand_path = args.demand_path)
+    buffer = Buffer(capacity = args.buffer_capacity)
+    worker = Worker(buffer = buffer, lr = args.lr, gamma = args.gamma, eps_clip = args.eps_clip, max_step = args.max_step,
+                    num = args.worker_num,
+                    device = device, zone_table_path=args.zone_table_path, model_path = args.model_path)
+    reward_func = reward_func_generator(args.reward_parameter, args.order_threshold)
+
+
+    best_reward = -1e-8
+    best_epoch = 0
+    j = 0
+
+    while True:
+        j += 1
+
+        reservation_value, speed, capacity, group = group_generation_func1(args.worker_num)
+        worker.reset(max_step=args.max_step, num= args.worker_num, reservation_value=reservation_value, speed=speed, capacity=capacity, group=group)
+        platform.reset(discount_factor = args.gamma)
+        demand.reset(episode_time=0, p_sample=args.demand_sample_rate, wait_time=args.order_max_wait_time)
+        exploration_rate = max(exploration_rate * epsilon_decay_rate, epsilon_final)
+        print("Exploration Rate: ",exploration_rate)
+
+        pbar = tqdm.tqdm(range(args.max_step))
+        for t in pbar:
+        # for _ in range(args.max_step):
+            q_value, price_mu, price_sigma, order_state = worker.observe(demand.current_demand, t, exploration_rate)
+            assignment, _ = platform.assign(q_value)
+            feedback_table, new_route_table, new_route_time_table, new_remaining_time_table, new_total_travel_time_table, accepted_orders = platform.feedback(
+                worker.observe_space, worker.reservation_value, worker.current_orders, worker.current_order_num,
+                assignment, order_state, price_mu, price_sigma, reward_func, args.reject_punishment, args.order_threshold, t
+            )
+            worker.update(feedback_table, new_route_table, new_route_time_table, new_remaining_time_table, new_total_travel_time_table, (t==args.max_step-1))
+            demand.pickup(accepted_orders)
+
+        c_loss, a_loss = worker.train()
+
+        total_pickup = platform.PickUp
+        total_reward = platform.Total_Reward
+        average_detour = np.mean(platform.Total_Detour)
+        average_travel_time = np.mean(worker.Pass_Travel_Time)
+        total_timeout = np.sum((np.array(worker.Pass_Travel_Time)>args.order_threshold))
+        worder_reject = platform.worker_reject
+
+        log = "Train Episode {:} , Total Reward {:} , Order Pickup {:} , Worker Reject Num {:} , Average Detuor {:} , Average Travel Time {:} , Total Timeout Order {:} , Critic Loss {:} , Actor Loss {:}".format(
+            j, total_reward, total_pickup, worder_reject, average_detour, average_travel_time, total_timeout, c_loss, a_loss
+        )
+        print(log)
+        with open("train.txt", 'a') as file:
+            file.write(log+"\n")
+        worker.save("latest.pth")
+
+        if j % args.eval_episode == 0:
+            reservation_value, speed, capacity, group = group_generation_func1(args.worker_num)
+            worker.reset(max_step=args.max_step, num=args.worker_num, reservation_value=reservation_value, speed=speed,
+                         capacity=capacity, group=group)
+            platform.reset(discount_factor=args.gamma)
+            demand.reset(episode_time=0, p_sample=args.demand_sample_rate, wait_time=args.order_max_wait_time)
+            pbar = tqdm.tqdm(range(args.max_step))
+            for t in pbar:
+            # for _ in range(args.max_step):
+                q_value, price_mu, price_sigma, order_state = worker.observe(demand.current_demand, t, 0)
+                assignment, _ = platform.assign(q_value)
+                feedback_table, new_route_table, new_route_time_table, new_remaining_time_table, new_total_travel_time_table, accepted_orders = platform.feedback(
+                    worker.observe_space, worker.reservation_value, worker.current_orders, worker.current_order_num,
+                    assignment, order_state, price_mu, price_sigma, reward_func, args.reject_punishment,
+                    args.order_threshold, t
+                )
+                worker.update(feedback_table, new_route_table, new_route_time_table, new_remaining_time_table,
+                              new_total_travel_time_table, (t == args.max_step - 1))
+                demand.pickup(accepted_orders)
+
+            total_pickup = platform.PickUp
+            total_reward = platform.Total_Reward
+            average_detour = np.mean(platform.Total_Detour)
+            average_travel_time = np.mean(worker.Pass_Travel_Time)
+            total_timeout = np.sum((np.array(worker.Pass_Travel_Time) > args.order_threshold))
+            worder_reject = platform.worker_reject
+
+            log = "Eval Episode {:} , Total Reward {:} , Order Pickup {:} , Worker Reject Num {:} , Average Detuor {:} , Average Travel Time {:} , Total Timeout Order {:}".format(
+                j, total_reward, total_pickup, worder_reject, average_detour, average_travel_time, total_timeout
+            )
+            print(log)
+            with open("eval.txt", 'a') as file:
+                file.write(log + "\n")
+
+            if total_reward > best_reward:
+                best_epoch = 0
+                best_reward = total_reward
+                worker.save("best.pth")
+            else:
+                best_epoch += 1
+
+            if best_epoch >= args.converge_epoch and j > args.minimum_episode:
+                break
+
+
+if __name__ == '__main__':
+    main()
