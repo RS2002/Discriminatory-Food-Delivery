@@ -38,6 +38,10 @@ lat_min, lat_max = 22.24370366972477, 22.505171559633027
 lon_min, lon_max = 113.93901100917432, 114.26928623853212
 lat_range = lat_max - lat_min
 lon_range = lon_max - lon_min
+wait_max_time = 5
+transportation_max_time = 40
+max_seat = 3
+# to make all input around 0-1
 def norm(order, x_state, x_order):
     order, x_state, x_order = order.clone(), x_state.clone(), x_order.clone()
     # 1. lat & lon
@@ -53,12 +57,12 @@ def norm(order, x_state, x_order):
     x_order[:,:,1] = (x_order[:,:,1] - lon_range) / lon_range * (x_order[:,:,0] != 0)
 
     # 2. time
-    order[:,4] = order[:,4] / 5 # max wait time: 5 min
-    x_order[:,:,2:] = x_order[:,:,2:] / 40 # max transportation time: 40min as threshold
+    order[:,4] = order[:,4] / wait_max_time # max wait time: 5 min
+    x_order[:,:,2:] = x_order[:,:,2:] / transportation_max_time # max transportation time: 40min as threshold
 
     # 3. seat
-    x_state[:,2] = x_state[:,2] / 3 # max seat: 3
-    x_state[:,4] = x_state[:,4] / 3 # max seat: 3
+    x_state[:,2] = x_state[:,2] / max_seat # max seat: 3
+    x_state[:,4] = x_state[:,4] / max_seat # max seat: 3
 
     return order, x_state, x_order
 
@@ -95,6 +99,13 @@ class Buffer():
 
     def append(self,record):
         state, action, reward, delta_t, next_state = record
+
+        speed, capacity, positive, negative = state[1],state[2],state[3],state[4]
+        state = state[0]
+
+        speed_next, capacity_next, positive_next, negative_next = next_state[1],next_state[2],next_state[3],next_state[4]
+        next_state = next_state[0]
+
         if self.num == self.capacity:
             # state
             self.worker_state = self.worker_state[1:]
@@ -112,14 +123,18 @@ class Buffer():
         else:
             self.num+=1
 
-        self.worker_state.append(state[0].tolist())
+        worker_state_temp = state[0][:3].tolist()
+        worker_state_temp.extend([speed, capacity, positive, negative])
+        self.worker_state.append(worker_state_temp)
         self.order_state.append(state[1].tolist())
         self.order_num.append(state[2])
         self.new_order_state.append(state[3].tolist())
         self.price.append(action[0])
         self.price_log_prob.append(action[1])
         self.delta_t.append(delta_t)
-        self.worker_state_next.append(next_state[0].tolist())
+        worker_state_next_temp = next_state[0][:3].tolist()
+        worker_state_next_temp.extend([speed_next, capacity_next, positive_next, negative_next])
+        self.worker_state_next.append(worker_state_next_temp)
         self.order_state_next.append(next_state[1].tolist())
         self.order_num_next.append(next_state[2])
         self.new_order_state_next.append(next_state[3].tolist())
@@ -207,7 +222,7 @@ class Worker():
         self.max_capacity = np.max(self.capacity)
 
         if group is None:
-            self.group = np.array([1] * self.num)
+            self.group = np.array([0] * self.num)
         else:
             self.group = group
 
@@ -243,10 +258,10 @@ class Worker():
         2: remaining order place
         3: state -- 0-available 1-picking 2-full
         4: remaining picking time
-        5,6: picking lat,lon
         current state space only includes the 0,1,2 items
         '''
-        self.observe_space = np.zeros([self.num,7])
+        self.observe_space = np.zeros([self.num,5])
+        self.observe_space[:,2] = self.capacity
 
         # allocate a initial location randomly from valid zone
         random_integers = np.random.randint(0, len(self.zone_lookup), size=(self.num))
@@ -285,7 +300,7 @@ class Worker():
 
     def update(self, feedback_table, new_route_table ,new_route_time_table ,new_remaining_time_table ,new_total_travel_time_table, final_step=False):
         results = Parallel(n_jobs=24)(
-            delayed(single_update)(self.observe_space[i], self.current_orders[i], self.current_order_num[i], self.positive_history[i], self.negative_history[i], self.speed[i], self.travel_route[i], self.travel_time[i], self.experience[i], feedback_table[i], new_route_table[i], new_route_time_table[i], new_remaining_time_table[i], new_total_travel_time_table[i])
+            delayed(single_update)(self.observe_space[i], self.current_orders[i], self.current_order_num[i], self.positive_history[i], self.negative_history[i], self.speed[i], self.capacity[i], self.travel_route[i], self.travel_time[i], self.experience[i], feedback_table[i], new_route_table[i], new_route_time_table[i], new_remaining_time_table[i], new_total_travel_time_table[i])
             for i in range(self.num))
 
         for i in range(len(results)):
@@ -331,10 +346,13 @@ class Worker():
                 price_old, price_log_prob_old, reward, delta_t, \
                 worker_state_next, order_state_next, order_num_next, new_order_state_next = self.buffer.sampling(batch_size, self.device)
 
-            x1,x2,x3 = norm(new_order_state,worker_state,order_state)
+            x1, x2, x3 = norm(new_order_state,worker_state,order_state)
             current_state_value, price_mu, price_sigma = self.Q_training(x1,x2,x3,order_num)
             x1, x2, x3 = norm(new_order_state_next, worker_state_next, order_state_next)
+
             next_state_value, _, _ = self.Q_target(x1, x2, x3, order_num_next)
+            # next_state_value, _, _ = self.Q_training(x1, x2, x3, order_num_next)
+
             td_target = reward + self.gamma ** delta_t * next_state_value.detach()
             td_target = td_target.float()
 
@@ -352,9 +370,22 @@ class Worker():
             loss = critic_loss + actor_loss
             self.optim.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.Q_training.parameters(), 1.0)  # avoid gradient explosion
+
+            has_nan = False
+            for name, param in self.Q_training.named_parameters():
+                if param.grad is not None:
+                    if torch.isnan(param.grad).any():
+                        has_nan = True
+                        break
+            if has_nan:
+                # print("NAN Gradient->Skip")
+                continue
+
             self.optim.step()
             c_loss.append(critic_loss.item())
             a_loss.append(actor_loss.item())
+        self.update_Qtarget()
 
         return np.mean(c_loss), np.mean(a_loss)
 
@@ -372,36 +403,39 @@ experience
 full_experience: not None only if an experience is full filled
 finished_order_time: not None only if any order is finished
 '''
-def single_update(observe_space, current_orders, current_orders_num, positive_history, negative_history, speed, current_travel_route, current_travel_time, experience, feedback, new_route ,new_route_time ,new_remaining_time ,new_total_travel_time):
+def single_update(observe_space, current_orders, current_orders_num, positive_history, negative_history, speed, capacity, current_travel_route, current_travel_time, experience, feedback, new_route ,new_route_time ,new_remaining_time ,new_total_travel_time):
     full_experience = None
     finished_order_time = None
     current_orders_num = int(current_orders_num)
     # take action
     if feedback is not None:
-        # update experience
-        if len(experience) > 0:
-            experience.append(feedback[0][-1] - experience[0][-1]) # △t
-            experience.append(feedback[0]) # s_next
-            if len(experience) == 5:
-                full_experience = experience
-            else:
-                print("There is a bug (experience)!!")
-            experience = []
-        experience.append(feedback[0]) # s_current
-        experience.append(feedback[1]) # a
-        experience.append(feedback[2]) # r
-
-        # update state
         if feedback[-1] == -1: # -1 means reject
             negative_history = negative_history * 0.8 + feedback[1][0] * 0.2
         else: # accept order
             positive_history = positive_history * 0.8 + feedback[1][0] * 0.2
 
+        # update experience
+        if len(experience) > 0:
+            experience.append(feedback[0][-1] - experience[0][-1]) # △t
+            experience.append([feedback[0],speed,capacity,positive_history,negative_history]) # s_next
+            # print([speed,capacity,positive_history,negative_history])
+            if len(experience) == 5:
+                full_experience = experience
+            else:
+                print("There is a bug (experience)!!")
+            experience = []
+        experience.append([feedback[0],speed,capacity,positive_history,negative_history]) # s_current
+        experience.append(feedback[1]) # a
+        experience.append(feedback[2]) # r
+
+        # update state
+        if feedback[-1] != -1: # accept order
+
             observe_space[2] -= 1 # remaining seat
             observe_space[3] = 1 # update to picking up state
             observe_space[4] = feedback[-1] # remaining picking up time
-            observe_space[5] = feedback[0][-2][0] # plat
-            observe_space[6] = feedback[0][-2][1] # plon
+            observe_space[0] = feedback[0][-2][0] # plat
+            observe_space[1] = feedback[0][-2][1] # plon
 
             current_travel_route, current_travel_time = new_route ,new_route_time
 
@@ -412,7 +446,7 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
             current_orders[current_orders_num, 0], current_orders[current_orders_num, 1] = feedback[0][-2][2], feedback[0][-2][3] # dlat,dlon (new orders)
             current_orders_num += 1
 
-    step = speed * 1
+    step = speed * 1 # 1min
     if observe_space[3] == 1: # pick up
         if observe_space[4] > step:
             observe_space[4] -= step
@@ -428,16 +462,21 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
         step_minute = step
         step = step * 60
         for i in range(len(current_travel_time)):
-            if step > current_travel_time[i]:
+            if step >= current_travel_time[i]:
                 step -= current_travel_time[i]
             else:
                 current_travel_time[i] -= step
                 current_travel_time = current_travel_time[i:]
                 current_travel_route = current_travel_route[i:]
                 break
+            if i == len(current_travel_time) - 1: # finish all orders
+                observe_space[0], observe_space[1] = current_travel_route[-1][1], current_travel_route[-1][0]  # lat, lon
+                current_travel_time = []
+                current_travel_route = []
 
         # print(current_travel_route)
-        observe_space[0], observe_space[1] = current_travel_route[0][1], current_travel_route[0][0] # lat, lon
+        if len(current_travel_route)>0:
+            observe_space[0], observe_space[1] = current_travel_route[0][1], current_travel_route[0][0] # lat, lon
 
         current_orders[:current_orders_num, 2] -= step_minute # update remaining time
 
@@ -447,6 +486,9 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
         drop_num = np.sum(drop_index)
         if drop_num>0:
             current_orders_num -= drop_num
+            observe_space[2] += drop_num
+            if observe_space[3] == 2:
+                observe_space[3] = 0
             drop_index = drop_index.astype(bool)
             finished_orders = current_orders[drop_index]
             current_orders = current_orders[~drop_index]

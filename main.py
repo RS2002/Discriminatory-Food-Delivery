@@ -11,12 +11,12 @@ def get_args():
 
     parser.add_argument('--batch_size', type=int, default=512)
     parser.add_argument('--train_times', type=int, default=20)
-    parser.add_argument('--lr', type=float, default=0.0001)
+    parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--eps_clip', type=float, default=0.2)
     parser.add_argument('--max_step', type=int, default=60) #test: 10
-    parser.add_argument('--eval_episode', type=int, default=25)
-    parser.add_argument('--converge_epoch', type=int, default=3)
+    parser.add_argument('--eval_episode', type=int, default=20)
+    parser.add_argument('--converge_epoch', type=int, default=5)
     parser.add_argument('--minimum_episode', type=int, default=500)
     parser.add_argument('--worker_num', type=int, default=1000) #test: 50
     parser.add_argument('--buffer_capacity', type=int, default=1e5)
@@ -24,11 +24,10 @@ def get_args():
     parser.add_argument('--order_max_wait_time', type=float, default=5.0)
     parser.add_argument('--order_threshold', type=float, default=40.0)
     parser.add_argument('--reward_parameter', type=float, nargs='+', default=[10.0,5.0,1.0,2.0,1.0,4.0])
-    parser.add_argument('--reject_punishment', type=float, default=2.0)
+    parser.add_argument('--reject_punishment', type=float, default=10.0)
     parser.add_argument('--epsilon', type=float, default=1.0)
     parser.add_argument('--epsilon_decay_rate', type=float, default=0.99)
     parser.add_argument('--epsilon_final', type=float, default=0.0005)
-
 
     parser.add_argument("--cpu", action="store_true",default=False)
     parser.add_argument("--cuda", type=str, default='0')
@@ -106,8 +105,9 @@ def main():
             )
             worker.update(feedback_table, new_route_table, new_route_time_table, new_remaining_time_table, new_total_travel_time_table, (t==args.max_step-1))
             demand.pickup(accepted_orders)
+            demand.update()
 
-        c_loss, a_loss = worker.train()
+        c_loss, a_loss = worker.train(args.batch_size, args.train_times)
 
         total_pickup = platform.PickUp
         total_reward = platform.Total_Reward
@@ -143,6 +143,7 @@ def main():
                 worker.update(feedback_table, new_route_table, new_route_time_table, new_remaining_time_table,
                               new_total_travel_time_table, (t == args.max_step - 1))
                 demand.pickup(accepted_orders)
+                demand.update()
 
             total_pickup = platform.PickUp
             total_reward = platform.Total_Reward
