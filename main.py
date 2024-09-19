@@ -15,7 +15,7 @@ def get_args():
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--eps_clip', type=float, default=0.2)
     parser.add_argument('--max_step', type=int, default=60) #test: 10
-    parser.add_argument('--eval_episode', type=int, default=20)
+    parser.add_argument('--eval_episode', type=int, default=5)
     parser.add_argument('--converge_epoch', type=int, default=5)
     parser.add_argument('--minimum_episode', type=int, default=500)
     parser.add_argument('--worker_num', type=int, default=1000) #test: 50
