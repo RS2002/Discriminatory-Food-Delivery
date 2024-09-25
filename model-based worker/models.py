@@ -91,7 +91,6 @@ class Worker_Net(nn.Module):
     def forward(self,x_state,x_order,order_num=None):
         x_order = self.lstm(x_order,order_num)
         x_state = self.encode(x_state)
-        # print(x_state.shape,x_order.shape)
         y = self.mlp(torch.concat([x_state,x_order],dim=-1))
         return y
 
@@ -152,33 +151,6 @@ class Q_Net(nn.Module):
         price_sigma_matrix = self.attention_price_sigma(worker,order)
         price_sigma_matrix = self.sigmoid(price_sigma_matrix)
         return q_matrix,price_mu_matrix,price_sigma_matrix
-
-class Worker_Q_Net(nn.Module):
-    def __init__(self, input_size=14, history_order_size=4, output_dim=2, bi_direction=False): # (7+1)+(5+1)=14
-        super().__init__()
-        self.worker_net = Worker_Net(state_size=input_size, order_size=history_order_size, output_dim=output_dim, bi_direction=bi_direction)
-        self.softmax = nn.Softmax(dim=-1)
-
-    # def forward(self,order,price,x_state,reservation_value,x_order,order_num=None):
-    #     order_num = order_num.int()
-    #     x_state = x_state.float()
-    #     x_order = x_order.float()
-    #     order = order.float()
-    #     price = price.float()
-    #     reservation_value = reservation_value.float()
-    #     x_state = torch.concat([x_state,reservation_value,order,price],dim=-1)
-    #     y = self.worker_net(x_state,x_order,order_num)
-    #     y = self.softmax(y)
-    #     return y
-
-    def forward(self,x,x_order,order_num=None):
-        # print(x.shape,x_order.shape,order_num.shape)
-        order_num = order_num.int()
-        x_order = x_order.float()
-        x = x.float()
-        y = self.worker_net(x,x_order,order_num)
-        y = self.softmax(y) # [reject_prob,accept_prob]
-        return y
 
 
 # test

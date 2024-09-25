@@ -4,7 +4,7 @@ from joblib import Parallel, delayed
 from scipy.optimize import linear_sum_assignment
 import numpy as np
 import random
-from Worker import accept_rate, norm
+from Worker import accept_rate
 
 class Platform():
     def __init__(self,discount_factor=0.99):
@@ -41,17 +41,16 @@ class Platform():
         # 返回分配结果和最大值
         return assignment, max_value
 
-    def feedback(self, observe, reservation_value, current_order, current_order_num, assignment, new_orders_state, price_mu, price_sigma, reward_func, punish_rate, threshold, current_time, worker_Q_Net, exploration_rate, worker_reject_punishment, device, worker_state):
+    def feedback(self, observe, reservation_value, current_order, current_order_num, assignment, new_orders_state, price_mu, price_sigma, reward_func, punish_rate, threshold, current_time):
         feedback_table = []
         new_route_table = []
         new_route_time_table = []
         new_remaining_time_table = []
         new_total_travel_time_table = []
         accepted_orders = []
-        worker_feed_back_table = []
 
         results = Parallel(n_jobs=24)(
-            delayed(excute)(observe[i], reservation_value[i], current_order[i], current_order_num[i], assignment[i], new_orders_state, price_mu[i], price_sigma[i], reward_func, punish_rate, threshold, current_time, worker_Q_Net, exploration_rate, worker_reject_punishment, device, worker_state[i])
+            delayed(excute)(observe[i], reservation_value[i], current_order[i], current_order_num[i], assignment[i], new_orders_state, price_mu[i], price_sigma[i], reward_func, punish_rate, threshold, current_time)
             for i
             in range(observe.shape[0]))
 
@@ -76,9 +75,8 @@ class Platform():
                 self.PickUp += 1
             elif result[0] is not None:
                 self.worker_reject += 1
-            worker_feed_back_table.append(result[7])
 
-        return feedback_table, new_route_table ,new_route_time_table ,new_remaining_time_table ,new_total_travel_time_table, accepted_orders, worker_feed_back_table
+        return feedback_table, new_route_table ,new_route_time_table ,new_remaining_time_table ,new_total_travel_time_table, accepted_orders
 
 '''
 beta_list:
@@ -115,7 +113,7 @@ new_route, new_route_time: route/time of each nodes which the worker will pass
 new_time, new_total_travel_time: remaining/total time of each order
 timeout: how many orders will be timeout after this assignment
 '''
-def excute(observe, reservation_value, current_order, current_order_num, assignment, new_orders_state, price_mu_vector, price_sigma_vector, reward_func, punish_rate, threshold, current_time, worker_Q_Net, exploration_rate, worker_reject_punishment, device, worker_state):
+def excute(observe, reservation_value, current_order, current_order_num, assignment, new_orders_state, price_mu_vector, price_sigma_vector, reward_func, punish_rate, threshold, current_time):
     current_order_num = int(current_order_num)
     if assignment is not None and observe[3] == 0:
         price_mu, price_sigma = price_mu_vector[assignment], price_sigma_vector[assignment]
@@ -123,32 +121,7 @@ def excute(observe, reservation_value, current_order, current_order_num, assignm
         price = price_dist.sample()
         price_log_prop = price_dist.log_prob(price)
         price, price_log_prop = price.item(), price_log_prop.item() # avoid gradient propagation
-
-        rand = random.random()
-        if rand<exploration_rate:
-            acc_rate = 0.5
-        else:
-            worker_Q_Net.eval()
-            torch.set_grad_enabled(False)
-            order_norm, x_norm, x_order_norm = norm(np.expand_dims(new_orders_state[assignment], axis=0),
-                                                    np.expand_dims(worker_state, axis=0),
-                                                    np.expand_dims(current_order, axis=0))
-            x = np.concatenate([order_norm, x_norm, np.array([[reservation_value, price]])], axis=-1)
-            x = torch.from_numpy(x).to(device)
-            x_order_norm = torch.from_numpy(x_order_norm).to(device)
-            worker_q_value = worker_Q_Net(x, x_order_norm, torch.tensor([current_order_num]).to(device))
-            acc_rate = worker_q_value[0, 1]
-
-        # worker_Q_Net.eval() # no ε-greedy to avoid platform network cannot converge
-        # torch.set_grad_enabled(False)
-        # order_norm, x_norm, x_order_norm = norm(np.expand_dims(new_orders_state[assignment], axis=0), np.expand_dims(worker_state, axis=0), np.expand_dims(current_order, axis=0))
-        # x = np.concatenate([order_norm, x_norm, np.array([[reservation_value, price]])], axis=-1)
-        # x = torch.from_numpy(x).to(device)
-        # x_order_norm = torch.from_numpy(x_order_norm).to(device)
-        # worker_q_value = worker_Q_Net(x, x_order_norm, torch.tensor([current_order_num]).to(device))
-        # acc_rate = worker_q_value[0,1]
-
-        # acc_rate = accept_rate(price,reservation_value)
+        acc_rate = accept_rate(price,reservation_value)
         rand = random.random()
         if rand<=acc_rate: #accept
             accept_order = assignment
@@ -183,19 +156,13 @@ def excute(observe, reservation_value, current_order, current_order_num, assignm
                 salary = work_add * price
                 reward = reward_func(time_add,timeout,salary,direct_distance)
                 feedback = [[observe,current_order,current_order_num,new_orders_state[assignment], current_time], [price,price_log_prop], reward, pickup_time[0]]
-
-                worker_reward = work_add * (price-reservation_value)
-                worker_feedback = [1,worker_reward,price]
-
-                return feedback, new_route, new_route_time, new_time, new_total_travel_time, timeout, accept_order, worker_feedback
+                return feedback, new_route, new_route_time, new_time, new_total_travel_time, timeout, accept_order
             else: # routing failure --> decline the assignment
-                return None, None, None, None, None, 0, None, None
+                return None, None, None, None, None, 0, None
         else: #reject
             reward = - punish_rate / price # to help model increase the price
             feedback = [[observe, current_order, current_order_num, new_orders_state[assignment], current_time],
                         [price, price_log_prop], reward, -1]
-
-            worker_feedback = [0,-worker_reject_punishment,price]
-            return feedback, None, None, None, None, 0, None, worker_feedback
+            return feedback, None, None, None, None, 0, None
     else:
-        return None, None, None, None, None, 0, None, None
+        return None, None, None, None, None, 0, None

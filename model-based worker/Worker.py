@@ -2,13 +2,10 @@ import math
 import numpy as np
 import torch
 import pandas as pd
-from models import Q_Net,Worker_Q_Net
+from models import Q_Net
 from joblib import Parallel, delayed
 import torch.nn as nn
 import tqdm
-import warnings
-# 忽略 FutureWarning
-warnings.simplefilter(action='ignore', category=FutureWarning)
 
 def accept_rate(price=1.0,reservation_value=1.0):
     ratio = price / reservation_value
@@ -46,11 +43,7 @@ transportation_max_time = 40
 max_seat = 3
 # to make all input around 0-1
 def norm(order, x_state, x_order):
-    if isinstance(order, torch.Tensor):
-        order, x_state, x_order = order.clone(), x_state.clone(), x_order.clone()
-    else:
-        order, x_state, x_order = order.copy(), x_state.copy(), x_order.copy()
-
+    order, x_state, x_order = order.clone(), x_state.clone(), x_order.clone()
     # 1. lat & lon
     order[:,0] = (order[:,0] - lat_min) / lat_range
     order[:,2] = (order[:,2] - lat_min) / lat_range
@@ -104,14 +97,8 @@ class Buffer():
         # reward
         self.reward = []
 
-        # worker
-        self.reservation_value = []
-        self.worker_action = []
-        self.worker_reward = []
-        self.price_next = []
-
     def append(self,record):
-        state, worker_current, action, reward, delta_t, next_state, worker_next = record
+        state, action, reward, delta_t, next_state = record
 
         speed, capacity, positive, negative = state[1],state[2],state[3],state[4]
         state = state[0]
@@ -133,10 +120,6 @@ class Buffer():
             self.order_num_next = self.order_num_next[1:]
             self.new_order_state_next = self.new_order_state_next[1:]
             self.reward = self.reward[1:]
-            self.reservation_value = self.reservation_value[1:]
-            self.worker_action = self.worker_action[1:]
-            self.worker_reward = self.worker_reward[1:]
-            self.price_next = self.price_next[1:]
         else:
             self.num+=1
 
@@ -156,10 +139,7 @@ class Buffer():
         self.order_num_next.append(next_state[2])
         self.new_order_state_next.append(next_state[3].tolist())
         self.reward.append(reward)
-        self.reservation_value.append(worker_current[1])
-        self.worker_action.append(worker_current[0][0])
-        self.worker_reward.append(worker_current[0][1])
-        self.price_next.append(worker_next[0][1])
+
 
 
     def sampling(self,size,device):
@@ -178,15 +158,9 @@ class Buffer():
         order_num_next = torch.tensor([self.order_num_next[i] for i in indices]).to(device)
         new_order_state_next = torch.tensor([self.new_order_state_next[i] for i in indices]).to(device)
 
-        reservation_value = torch.tensor([self.reservation_value[i] for i in indices]).to(device)
-        worker_action = torch.tensor([self.worker_action[i] for i in indices]).to(device)
-        worker_reward = torch.tensor([self.worker_reward[i] for i in indices]).to(device)
-        price_next = torch.tensor([self.price_next[i] for i in indices]).to(device)
-
         return worker_state,order_state,order_num,new_order_state,\
             price, price_log_prob, reward, delta_t, \
-            worker_state_next, order_state_next, order_num_next, new_order_state_next, \
-            reservation_value, price_next, worker_action, worker_reward
+            worker_state_next, order_state_next, order_num_next, new_order_state_next
 
 
 '''
@@ -196,7 +170,7 @@ reservation_value/speed: 1.0 as baseline
 capacity: the maximum order number of each worker
 '''
 class Worker():
-    def __init__(self, buffer, lr=0.0001, gamma=0.99, eps_clip=0.2, max_step=60, history_num=3, num=1000, reservation_value=None, speed=None, capacity=None, group=None, device=None, zone_table_path = "./data/zone_table.csv", model_path = None,  worker_model_path = None):
+    def __init__(self, buffer, lr=0.0001, gamma=0.99, eps_clip=0.2, max_step=60, history_num=3, num=1000, reservation_value=None, speed=None, capacity=None, group=None, device=None, zone_table_path = "./data/zone_table.csv", model_path = None):
         super().__init__()
 
         self.buffer = buffer
@@ -215,28 +189,17 @@ class Worker():
         if model_path is not None:
             self.Q_target.load_state_dict(torch.load(model_path))
             self.Q_training.load_state_dict(torch.load(model_path))
+
         for param in self.Q_target.parameters():
             param.requires_grad = False
         self.Q_target.eval()
 
-
-        self.Worker_Q_training = Worker_Q_Net(input_size=14, history_order_size=4, output_dim=2, bi_direction=False).to(device)
-        self.Worker_Q_target = Worker_Q_Net(input_size=14, history_order_size=4, output_dim=2, bi_direction=False).to(device)
-        if worker_model_path is not None:
-            self.Worker_Q_training.load_state_dict(torch.load(worker_model_path))
-            self.Worker_Q_target.load_state_dict(torch.load(worker_model_path))
-        for param in self.Worker_Q_target.parameters():
-            param.requires_grad = False
-        self.Worker_Q_target.eval()
-
         self.update_Qtarget(tau=0.0)
 
 
-        print('Platform total parameters:', sum(p.numel() for p in self.Q_training.parameters() if p.requires_grad))
-        print('Worker total parameters:', sum(p.numel() for p in self.Worker_Q_training.parameters() if p.requires_grad))
-
+        total_params = sum(p.numel() for p in self.Q_training.parameters() if p.requires_grad)
+        print('total parameters:', total_params)
         self.optim = torch.optim.Adam(self.Q_training.parameters(), lr=lr)
-        self.optim_worker = torch.optim.Adam(self.Worker_Q_training.parameters(), lr=lr)
         self.loss_func = nn.MSELoss()
 
         # self.reset(max_step,num,reservation_value, speed, capacity, group)
@@ -256,7 +219,6 @@ class Worker():
             self.speed = speed
 
         # self.real_reservation_value = self.reservation_value * self.speed
-        self.worker_reward = np.array([0.0] * self.num)
 
         if capacity is None:
             self.capacity = np.array([3.0] * self.num)
@@ -341,11 +303,11 @@ class Worker():
         q_value[exploration_matrix<exploration_rate] = 1e8
         # 4. delete the Q value of not available workers
         q_value[self.observe_space[:,3]!=0] = -1e8
-        return q_value.cpu().detach().numpy(), price_mu.cpu().detach().numpy(), price_sigma.cpu().detach().numpy(), order_state, worker_state
+        return q_value.cpu().detach().numpy(), price_mu.cpu().detach().numpy(), price_sigma.cpu().detach().numpy(), order_state
 
-    def update(self, feedback_table, new_route_table ,new_route_time_table ,new_remaining_time_table ,new_total_travel_time_table, worker_feed_back_table, current_time, final_step=False):
+    def update(self, feedback_table, new_route_table ,new_route_time_table ,new_remaining_time_table ,new_total_travel_time_table, final_step=False):
         results = Parallel(n_jobs=24)(
-            delayed(single_update)(self.observe_space[i], self.current_orders[i], self.current_order_num[i], self.positive_history[i], self.negative_history[i], self.speed[i], self.capacity[i], self.travel_route[i], self.travel_time[i], self.experience[i], feedback_table[i], new_route_table[i], new_route_time_table[i], new_remaining_time_table[i], new_total_travel_time_table[i], worker_feed_back_table[i], self.reservation_value[i])
+            delayed(single_update)(self.observe_space[i], self.current_orders[i], self.current_order_num[i], self.positive_history[i], self.negative_history[i], self.speed[i], self.capacity[i], self.travel_route[i], self.travel_time[i], self.experience[i], feedback_table[i], new_route_table[i], new_route_time_table[i], new_remaining_time_table[i], new_total_travel_time_table[i])
             for i in range(self.num))
 
         for i in range(len(results)):
@@ -355,7 +317,6 @@ class Worker():
                 self.buffer.append(results[i][8])
             if results[i][9] is not None:
                 self.Pass_Travel_Time.extend(results[i][9].tolist())
-            self.worker_reward[i] += self.gamma ** current_time * results[i][10]
 
         # # take the ending into consideration (to do, not sure about the effectiveness)
         # if final_step:
@@ -372,44 +333,32 @@ class Worker():
         #     self.Pass_Travel_Time.extend(finished_order_time.tolist())
 
 
-    def save(self, path1, path2):
-        torch.save(self.Q_training.state_dict(), path1)
-        torch.save(self.Worker_Q_training.state_dict(), path2)
+    def save(self, path):
+        torch.save(self.Q_training.state_dict(), path)
 
     def update_Qtarget(self,tau=0.005):
         for target_param, train_param in zip(self.Q_target.parameters(), self.Q_training.parameters()):
             target_param.data.copy_(tau * train_param.data + (1.0 - tau) * target_param.data)
-        for target_param, train_param in zip(self.Worker_Q_target.parameters(), self.Worker_Q_training.parameters()):
-            target_param.data.copy_(tau * train_param.data + (1.0 - tau) * target_param.data)
+
     def train(self,batch_size=512,train_times=10):
         c_loss=[]
         a_loss=[]
 
-        worker_loss = []
-
         pbar = tqdm.tqdm(range(train_times))
         torch.set_grad_enabled(True)
         self.Q_training.train()
-        self.Worker_Q_training.train()
         for _ in pbar:
         # for _ in range(train_times):
             worker_state, order_state, order_num, new_order_state, \
                 price_old, price_log_prob_old, reward, delta_t, \
-                worker_state_next, order_state_next, order_num_next, new_order_state_next, \
-                reservation_value, price_next, worker_action, worker_reward = self.buffer.sampling(batch_size, self.device)
+                worker_state_next, order_state_next, order_num_next, new_order_state_next = self.buffer.sampling(batch_size, self.device)
 
             x1, x2, x3 = norm(new_order_state,worker_state,order_state)
             current_state_value, price_mu, price_sigma = self.Q_training(x1,x2,x3,order_num)
-            current_worker_q_value = self.Worker_Q_training(torch.concat([x1,x2,reservation_value.unsqueeze(-1),price_old.unsqueeze(-1)],dim=-1), x3, order_num)
-            current_worker_q_value = current_worker_q_value[torch.arange(current_worker_q_value.size(0)),worker_action]
-
             x1, x2, x3 = norm(new_order_state_next, worker_state_next, order_state_next)
+
             next_state_value, _, _ = self.Q_target(x1, x2, x3, order_num_next)
             # next_state_value, _, _ = self.Q_training(x1, x2, x3, order_num_next)
-            next_worker_q_value = self.Worker_Q_target(torch.concat([x1, x2, reservation_value.unsqueeze(-1), price_next.unsqueeze(-1)], dim=-1), x3, order_num_next)
-            next_worker_q_value = torch.max(next_worker_q_value.detach(),dim=-1)[0]
-            worker_target = worker_reward + self.gamma** delta_t * next_worker_q_value
-            worker_target = worker_target.float()
 
             td_target = reward + self.gamma ** delta_t * next_state_value.detach()
             td_target = td_target.float()
@@ -443,30 +392,9 @@ class Worker():
             self.optim.step()
             c_loss.append(critic_loss.item())
             a_loss.append(actor_loss.item())
-
-            # train worker_net
-            loss = self.loss_func(current_worker_q_value, worker_target)
-            self.optim_worker.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.Worker_Q_training.parameters(), 1.0)  # avoid gradient explosion
-
-            has_nan = False
-            for name, param in self.Worker_Q_training.named_parameters():
-                if param.grad is not None:
-                    if torch.isnan(param.grad).any():
-                        has_nan = True
-                        break
-            if has_nan:
-                # print("NAN Gradient->Skip")
-                continue
-
-            self.optim_worker.step()
-            worker_loss.append(loss.item())
-
-
         self.update_Qtarget()
 
-        return np.mean(c_loss), np.mean(a_loss), np.mean(worker_loss)
+        return np.mean(c_loss), np.mean(a_loss)
 
 '''
 update state for each worker:
@@ -482,14 +410,12 @@ experience
 full_experience: not None only if an experience is full filled
 finished_order_time: not None only if any order is finished
 '''
-def single_update(observe_space, current_orders, current_orders_num, positive_history, negative_history, speed, capacity, current_travel_route, current_travel_time, experience, feedback, new_route ,new_route_time ,new_remaining_time ,new_total_travel_time, worker_feed_back, reservation_value):
+def single_update(observe_space, current_orders, current_orders_num, positive_history, negative_history, speed, capacity, current_travel_route, current_travel_time, experience, feedback, new_route ,new_route_time ,new_remaining_time ,new_total_travel_time):
     full_experience = None
     finished_order_time = None
     current_orders_num = int(current_orders_num)
-    worker_reward=0
     # take action
     if feedback is not None:
-        worker_reward=worker_feed_back[1]
         if feedback[-1] == -1: # -1 means reject
             negative_history = negative_history * 0.8 + feedback[1][0] * 0.2
         else: # accept order
@@ -499,15 +425,13 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
         if len(experience) > 0:
             experience.append(feedback[0][-1] - experience[0][-1]) # △t
             experience.append([feedback[0],speed,capacity,positive_history,negative_history]) # s_next
-            experience.append([worker_feed_back,reservation_value]) # worker_next
             # print([speed,capacity,positive_history,negative_history])
-            if len(experience) == 7:
+            if len(experience) == 5:
                 full_experience = experience
             else:
                 print("There is a bug (experience)!!")
             experience = []
         experience.append([feedback[0],speed,capacity,positive_history,negative_history]) # s_current
-        experience.append([worker_feed_back, reservation_value])  # worker_current
         experience.append(feedback[1]) # a
         experience.append(feedback[2]) # r
 
@@ -579,7 +503,7 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
             current_orders = np.concatenate([current_orders,fill_matrix],axis=0)
             finished_order_time = finished_orders[:,3]
 
-    return observe_space, current_orders, current_orders_num, positive_history, negative_history, current_travel_route, current_travel_time, experience, full_experience, finished_order_time, worker_reward
+    return observe_space, current_orders, current_orders_num, positive_history, negative_history, current_travel_route, current_travel_time, experience, full_experience, finished_order_time
 
 
 
