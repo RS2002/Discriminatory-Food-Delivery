@@ -12,6 +12,7 @@ class LSTM(nn.Module):
         )
 
     def forward(self,x,valid_index=None):
+        self.lstm.flatten_parameters()
         x,_ = self.lstm(x)
         x = torch.concat([torch.zeros(x.shape[0],1,x.shape[2]).to(x.device),x],dim=1)
         if valid_index is not None:
@@ -34,6 +35,8 @@ class BiLSTM(nn.Module):
         )
 
     def forward(self,x,valid_index=None):
+        self.lstm1.flatten_parameters()
+        self.lstm2.flatten_parameters()
         x1,_ = self.lstm1(x)
         x1 = torch.concat([torch.zeros(x1.shape[0],1,x1.shape[2]).to(x1.device),x1],dim=1)
         if valid_index is not None:

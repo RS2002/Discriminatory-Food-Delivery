@@ -38,8 +38,8 @@ def get_args():
     parser.add_argument("--platform_model_path",type=str,default=None)
     parser.add_argument("--worker_model_path",type=str,default=None)
 
-    parser.add_argument("--demand_path",type=str,default="../data/demand_evening_onehour.csv")
-    parser.add_argument("--zone_table_path",type=str,default="../data/zone_table.csv")
+    parser.add_argument("--demand_path",type=str,default="./data/demand_evening_onehour.csv")
+    parser.add_argument("--zone_table_path",type=str,default="./data/zone_table.csv")
 
     args = parser.parse_args()
     return args
@@ -169,15 +169,16 @@ def main():
             with open("eval.txt", 'a') as file:
                 file.write(log + "\n")
 
-            if total_reward > best_reward:
-                best_epoch = 0
-                best_reward = total_reward
-                worker.save("platfrom_best.pth", "worker_best.pth")
-            else:
-                best_epoch += 1
+            if j >= args.minimum_episode:
+                if total_reward > best_reward:
+                    best_epoch = 0
+                    best_reward = total_reward
+                    worker.save("platfrom_best.pth", "worker_best.pth")
+                else:
+                    best_epoch += 1
 
-            if best_epoch >= args.converge_epoch and j > args.minimum_episode:
-                break
+                if best_epoch >= args.converge_epoch :
+                    break
 
 
 if __name__ == '__main__':

@@ -585,15 +585,13 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
 
 if __name__ == '__main__':
     # test
-    # worker=Worker(1000)
-    # print(worker.observe_space[:, 1])
-    # print(worker.positive_history)
-    # print(worker.negative_history)
-    # import matplotlib.pyplot as plt
-    # plt.plot(range(len(worker.positive_history)),worker.positive_history,'r')
-    # plt.plot(range(len(worker.positive_history)),worker.negative_history,'b')
-    # plt.show()
-    plot_accept_rate()
+    worker=Worker(1000)
+    worker.reset()
+    import matplotlib.pyplot as plt
+    plt.plot(range(len(worker.positive_history)),worker.positive_history,'r')
+    plt.plot(range(len(worker.positive_history)),worker.negative_history,'b')
+    plt.show()
+    # plot_accept_rate()
 
 
 
