@@ -381,6 +381,7 @@ class Worker():
             target_param.data.copy_(tau * train_param.data + (1.0 - tau) * target_param.data)
         for target_param, train_param in zip(self.Worker_Q_target.parameters(), self.Worker_Q_training.parameters()):
             target_param.data.copy_(tau * train_param.data + (1.0 - tau) * target_param.data)
+
     def train(self,batch_size=512,train_times=10):
         c_loss=[]
         a_loss=[]
@@ -577,7 +578,7 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
             current_orders = current_orders[~drop_index]
             fill_matrix = np.zeros_like(finished_orders)
             current_orders = np.concatenate([current_orders,fill_matrix],axis=0)
-            finished_order_time = finished_orders[:,3]
+            finished_order_time = finished_orders[:,3] / speed
 
     return observe_space, current_orders, current_orders_num, positive_history, negative_history, current_travel_route, current_travel_time, experience, full_experience, finished_order_time, worker_reward
 

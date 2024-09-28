@@ -1,15 +1,42 @@
 import torch
 import torch.nn as nn
 
+class MLP(nn.Module):
+    def __init__(self, layer_sizes=[64,64,64,1], arl=False):
+        super().__init__()
+        self.arl = arl
+        self.attention = nn.Sequential(
+            nn.Linear(layer_sizes[0],layer_sizes[0]),
+            nn.ReLU(),
+            nn.Linear(layer_sizes[0],layer_sizes[0])
+        )
+
+        self.layer_sizes = layer_sizes
+        if len(layer_sizes) < 2:
+            raise ValueError()
+        self.layers = nn.ModuleList()
+        self.act = nn.LeakyReLU(negative_slope=0.01, inplace=True)
+        for i in range(len(layer_sizes) - 1):
+            self.layers.append(nn.Linear(layer_sizes[i], layer_sizes[i + 1]))
+
+    def forward(self, x):
+        if self.arl:
+            x = x * self.attention(x)
+        for layer in self.layers[:-1]:
+            x = self.act(layer(x))
+        x = self.layers[-1](x)
+        return x
+
 class LSTM(nn.Module):
     def __init__(self,input_size, output_size, hidden_size=64):
         super().__init__()
         self.lstm = nn.LSTM(input_size, hidden_size, batch_first=True, bidirectional=False)
-        self.fc = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size // 2 ),
-            nn.ReLU(),
-            nn.Linear(hidden_size // 2 , output_size),
-        )
+        # self.fc = nn.Sequential(
+        #     nn.Linear(hidden_size, hidden_size // 2 ),
+        #     nn.ReLU(),
+        #     nn.Linear(hidden_size // 2 , output_size),
+        # )
+        self.fc = MLP([hidden_size, hidden_size // 2, output_size])
 
     def forward(self,x,valid_index=None):
         self.lstm.flatten_parameters()
@@ -28,11 +55,13 @@ class BiLSTM(nn.Module):
         self.lstm1 = nn.LSTM(input_size, hidden_size // 2, batch_first=True, bidirectional=False)
         self.lstm2 = nn.LSTM(input_size, hidden_size // 2, batch_first=True, bidirectional=False)
 
-        self.fc = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size // 2 ),
-            nn.ReLU(),
-            nn.Linear(hidden_size // 2 , output_size),
-        )
+        # self.fc = nn.Sequential(
+        #     nn.Linear(hidden_size, hidden_size // 2 ),
+        #     nn.ReLU(),
+        #     nn.Linear(hidden_size // 2 , output_size),
+        # )
+        self.fc = MLP([hidden_size, hidden_size // 2, output_size])
+
 
     def forward(self,x,valid_index=None):
         self.lstm1.flatten_parameters()
@@ -57,24 +86,6 @@ class BiLSTM(nn.Module):
         x = torch.cat((x1, x2), dim=-1)
         x = self.fc(x)
         return x
-
-class MLP(nn.Module):
-    def __init__(self, layer_sizes=[64,64,64,1]):
-        super().__init__()
-        self.layer_sizes = layer_sizes
-        if len(layer_sizes) < 2:
-            raise ValueError()
-        self.layers = nn.ModuleList()
-        self.act = nn.LeakyReLU(negative_slope=0.01, inplace=True)
-        for i in range(len(layer_sizes) - 1):
-            self.layers.append(nn.Linear(layer_sizes[i], layer_sizes[i + 1]))
-
-    def forward(self, x):
-        for layer in self.layers[:-1]:
-            x = self.act(layer(x))
-        x = self.layers[-1](x)
-        return x
-
 class Worker_Net(nn.Module):
     def __init__(self, state_size=7, order_size=4, output_dim=32, bi_direction=False):
         super().__init__()
@@ -83,11 +94,12 @@ class Worker_Net(nn.Module):
         else:
             self.lstm = LSTM(order_size,32)
 
-        self.encode = nn.Sequential(
-            nn.Linear(state_size,16),
-            nn.ReLU(),
-            nn.Linear(16,32)
-        )
+        # self.encode = nn.Sequential(
+        #     nn.Linear(state_size,16),
+        #     nn.ReLU(),
+        #     nn.Linear(16,32)
+        # )
+        self.encode = MLP([state_size,16,32],arl=True)
 
         self.mlp = MLP([64,64,32,output_dim])
 
@@ -101,7 +113,7 @@ class Worker_Net(nn.Module):
 class Order_Net(nn.Module):
     def __init__(self, state_size=5, output_size=32):
         super().__init__()
-        self.model = MLP([state_size,16,32,output_size])
+        self.model = MLP([state_size,16,32,output_size],arl=True)
 
     def forward(self,x):
         y = self.model(x)
@@ -151,16 +163,15 @@ class Q_Net(nn.Module):
         worker = self.worker_net(x_state,x_order,order_num)
         q_matrix = self.attention(worker,order)
         price_mu_matrix = self.attention_price_mu(worker,order)
-        price_mu_matrix = self.sigmoid(price_mu_matrix) + 0.5
+        price_mu_matrix = self.sigmoid(price_mu_matrix) * 2
         price_sigma_matrix = self.attention_price_sigma(worker,order)
-        price_sigma_matrix = self.sigmoid(price_sigma_matrix)
+        price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.1
         return q_matrix,price_mu_matrix,price_sigma_matrix
 
 class Worker_Q_Net(nn.Module):
     def __init__(self, input_size=14, history_order_size=4, output_dim=2, bi_direction=False): # (7+1)+(5+1)=14
         super().__init__()
         self.worker_net = Worker_Net(state_size=input_size, order_size=history_order_size, output_dim=output_dim, bi_direction=bi_direction)
-        self.softmax = nn.Softmax(dim=-1)
 
     # def forward(self,order,price,x_state,reservation_value,x_order,order_num=None):
     #     order_num = order_num.int()
@@ -171,7 +182,6 @@ class Worker_Q_Net(nn.Module):
     #     reservation_value = reservation_value.float()
     #     x_state = torch.concat([x_state,reservation_value,order,price],dim=-1)
     #     y = self.worker_net(x_state,x_order,order_num)
-    #     y = self.softmax(y)
     #     return y
 
     def forward(self,x,x_order,order_num=None):
@@ -179,8 +189,7 @@ class Worker_Q_Net(nn.Module):
         order_num = order_num.int()
         x_order = x_order.float()
         x = x.float()
-        y = self.worker_net(x,x_order,order_num)
-        y = self.softmax(y) # [reject_prob,accept_prob]
+        y = self.worker_net(x,x_order,order_num) # [reject_prob,accept_prob]
         return y
 
 

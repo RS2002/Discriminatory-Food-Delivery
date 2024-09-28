@@ -19,9 +19,11 @@ class Platform():
         self.worker_reject = 0
 
     def assign(self,q_matrix):
+        # TODO: set non-zero threshold
+        threshold = 0
         # Solve Bipartite Match Process with ILP
         num_vehicles, num_demands = q_matrix.shape
-        Value_Matrix = np.concatenate((q_matrix,np.zeros_like(q_matrix)),axis=1)
+        Value_Matrix = np.concatenate((q_matrix,np.zeros_like(q_matrix)+threshold),axis=1)
         cost_matrix = -Value_Matrix
         row_indices, col_indices = linear_sum_assignment(cost_matrix)
 
@@ -41,7 +43,7 @@ class Platform():
         # 返回分配结果和最大值
         return assignment, max_value
 
-    def feedback(self, observe, reservation_value, current_order, current_order_num, assignment, new_orders_state, price_mu, price_sigma, reward_func, punish_rate, threshold, current_time, worker_Q_Net, exploration_rate, worker_reject_punishment, device, worker_state):
+    def feedback(self, observe, reservation_value, speed, current_order, current_order_num, assignment, new_orders_state, price_mu, price_sigma, reward_func, punish_rate, threshold, current_time, worker_Q_Net, exploration_rate, worker_reject_punishment, device, worker_state):
         feedback_table = []
         new_route_table = []
         new_route_time_table = []
@@ -51,7 +53,7 @@ class Platform():
         worker_feed_back_table = []
 
         results = Parallel(n_jobs=24)(
-            delayed(excute)(observe[i], reservation_value[i], current_order[i], current_order_num[i], assignment[i], new_orders_state, price_mu[i], price_sigma[i], reward_func, punish_rate, threshold, current_time, worker_Q_Net, exploration_rate, worker_reject_punishment, device, worker_state[i])
+            delayed(excute)(observe[i], reservation_value[i], speed[i], current_order[i], current_order_num[i], assignment[i], new_orders_state, price_mu[i], price_sigma[i], reward_func, punish_rate, threshold, current_time, worker_Q_Net, exploration_rate, worker_reject_punishment, device, worker_state[i])
             for i
             in range(observe.shape[0]))
 
@@ -115,7 +117,7 @@ new_route, new_route_time: route/time of each nodes which the worker will pass
 new_time, new_total_travel_time: remaining/total time of each order
 timeout: how many orders will be timeout after this assignment
 '''
-def excute(observe, reservation_value, current_order, current_order_num, assignment, new_orders_state, price_mu_vector, price_sigma_vector, reward_func, punish_rate, threshold, current_time, worker_Q_Net, exploration_rate, worker_reject_punishment, device, worker_state):
+def excute(observe, reservation_value, speed, current_order, current_order_num, assignment, new_orders_state, price_mu_vector, price_sigma_vector, reward_func, punish_rate, threshold, current_time, worker_Q_Net, exploration_rate, worker_reject_punishment, device, worker_state):
     current_order_num = int(current_order_num)
     if assignment is not None and observe[3] == 0:
         price_mu, price_sigma = price_mu_vector[assignment], price_sigma_vector[assignment]
@@ -137,7 +139,7 @@ def excute(observe, reservation_value, current_order, current_order_num, assignm
             x = torch.from_numpy(x).to(device)
             x_order_norm = torch.from_numpy(x_order_norm).to(device)
             worker_q_value = worker_Q_Net(x, x_order_norm, torch.tensor([current_order_num]).to(device))
-            acc_rate = worker_q_value[0, 1]
+            acc_rate = int(worker_q_value[0, 1]>=worker_q_value[0, 0])
 
         # worker_Q_Net.eval() # no ε-greedy to avoid platform network cannot converge
         # torch.set_grad_enabled(False)
@@ -173,7 +175,7 @@ def excute(observe, reservation_value, current_order, current_order_num, assignm
                 new_total_travel_time[:-1] = new_total_travel_time[:-1] + current_order[:current_order_num,3] - current_order[:current_order_num,2] # add the time already cost for each old order
                 new_total_travel_time = new_total_travel_time + pickup_time[0]
 
-                timeout = np.sum(new_total_travel_time>threshold) # how many orders will be over time
+                timeout = np.sum(new_total_travel_time / speed > threshold) # how many orders will be over time
                 time_add = np.sum(new_total_travel_time) - original_total_travel_time # total added time of all orders
                 # added workload
                 if len(new_total_travel_time)>1:
@@ -181,7 +183,7 @@ def excute(observe, reservation_value, current_order, current_order_num, assignm
                 else:
                     work_add = new_total_travel_time[-1] # no previous work
                 salary = work_add * price
-                reward = reward_func(time_add,timeout,salary,direct_distance)
+                reward = reward_func(time_add / speed, timeout, salary, direct_distance)
                 feedback = [[observe,current_order,current_order_num,new_orders_state[assignment], current_time], [price,price_log_prop], reward, pickup_time[0]]
 
                 worker_reward = work_add * (price-reservation_value)

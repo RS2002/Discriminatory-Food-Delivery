@@ -105,7 +105,7 @@ def main():
             q_value, price_mu, price_sigma, order_state, worker_state = worker.observe(demand.current_demand, t, exploration_rate)
             assignment, _ = platform.assign(q_value)
             feedback_table, new_route_table, new_route_time_table, new_remaining_time_table, new_total_travel_time_table, accepted_orders, worker_feed_back_table = platform.feedback(
-                worker.observe_space, worker.reservation_value, worker.current_orders, worker.current_order_num,
+                worker.observe_space, worker.reservation_value, worker.speed, worker.current_orders, worker.current_order_num,
                 assignment, order_state, price_mu, price_sigma, reward_func, args.reject_punishment, args.order_threshold, t,
                 worker.Worker_Q_training, exploration_rate * 0.3, args.worker_reject_punishment, device, worker_state
             )
@@ -144,7 +144,7 @@ def main():
                                                                                            0)
                 assignment, _ = platform.assign(q_value)
                 feedback_table, new_route_table, new_route_time_table, new_remaining_time_table, new_total_travel_time_table, accepted_orders, worker_feed_back_table = platform.feedback(
-                    worker.observe_space, worker.reservation_value, worker.current_orders, worker.current_order_num,
+                    worker.observe_space, worker.reservation_value, worker.speed, worker.current_orders, worker.current_order_num,
                     assignment, order_state, price_mu, price_sigma, reward_func, args.reject_punishment,
                     args.order_threshold, t,
                     worker.Worker_Q_training, 0, args.worker_reject_punishment, device, worker_state
