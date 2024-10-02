@@ -7,9 +7,11 @@ from joblib import Parallel, delayed
 import torch.nn as nn
 import tqdm
 import warnings
-# 忽略 FutureWarning
+# ignore FutureWarning
 warnings.simplefilter(action='ignore', category=FutureWarning)
+INF = 1e8
 
+# imitate the accept rate
 def accept_rate(price=1.0,reservation_value=1.0):
     ratio = price / reservation_value
     return 1/(1+math.exp(-50*(ratio-0.95)))
@@ -37,15 +39,19 @@ def plot_accept_rate():
     plt.show()
 
 
-lat_min, lat_max = 22.24370366972477, 22.505171559633027
-lon_min, lon_max = 113.93901100917432, 114.26928623853212
-lat_range = lat_max - lat_min
-lon_range = lon_max - lon_min
-wait_max_time = 5
-transportation_max_time = 40
-max_seat = 3
+# lat_min, lat_max = 22.24370366972477, 22.505171559633027
+# lon_min, lon_max = 113.93901100917432, 114.26928623853212
+# lat_range = lat_max - lat_min
+# lon_range = lon_max - lon_min
+# wait_max_time = 5
+# transportation_max_time = 40
+# max_seat = 3
 # to make all input around 0-1
-def norm(order, x_state, x_order):
+def norm(order, x_state, x_order, lat_min = 22.24370366972477, lat_max = 22.505171559633027, lon_min = 113.93901100917432, lon_max = 114.26928623853212, wait_max_time = 5, transportation_max_time = 40, max_seat = 3):
+
+    lat_range = lat_max - lat_min
+    lon_range = lon_max - lon_min
+
     if isinstance(order, torch.Tensor):
         order, x_state, x_order = order.clone(), x_state.clone(), x_order.clone()
     else:
@@ -73,13 +79,16 @@ def norm(order, x_state, x_order):
 
     return order, x_state, x_order
 
+# FIFO Buffer
 class Buffer():
-    def __init__(self,capacity):
+    def __init__(self,capacity = 1e5):
         super().__init__()
-        self.capacity = capacity
-        self.reset()
+        self.reset(capacity)
 
-    def reset(self):
+    def reset(self, capacity = None):
+        if capacity is not None:
+            self.capacity = capacity
+
         self.num = 0
 
         # state
@@ -89,7 +98,7 @@ class Buffer():
         self.new_order_state = []
 
         # action
-        self.price = []
+        self.price = [] # also worker extra state
         self.price_log_prob = []
 
         # △t
@@ -105,11 +114,22 @@ class Buffer():
         self.reward = []
 
         # worker
-        self.reservation_value = []
+        self.reservation_value = [] # worker extra state
         self.worker_action = []
         self.worker_reward = []
-        self.price_next = []
+        self.price_next = [] # worker extra state (next)
 
+    '''
+    input: record = [state, worker_current, action, reward, delta_t, next_state, worker_next]
+    
+    state = [[observe,current_order,current_order_num,new_orders_state, current_time],speed,capacity,positive_history,negative_history] (platform & worker common state)
+    worker_current = [[worker_action, worker_reward, price], reservation_value] (worker extra state & action)
+    action = [price, price_log_prob]
+    reward
+    delta_t
+    next_state (same structure as "state") 
+    worker_next (same structure as "worker_current") 
+    '''
     def append(self,record):
         state, worker_current, action, reward, delta_t, next_state, worker_next = record
 
@@ -120,7 +140,6 @@ class Buffer():
         next_state = next_state[0]
 
         if self.num == self.capacity:
-            # state
             self.worker_state = self.worker_state[1:]
             self.order_state = self.order_state[1:]
             self.order_num = self.order_num[1:]
@@ -161,7 +180,15 @@ class Buffer():
         self.worker_reward.append(worker_current[0][1])
         self.price_next.append(worker_next[0][1])
 
-
+    '''
+    random sample <size> samples
+    return:
+    
+    line1: platform & worker common state
+    line2: action (price is also a part of satet of worker), reward, △t
+    line3: platform & worker common state_next
+    line4: worker extra state/action/reward/state_next
+    '''
     def sampling(self,size,device):
         indices = np.random.randint(0, self.num, size=size)
 
@@ -189,6 +216,7 @@ class Buffer():
             reservation_value, price_next, worker_action, worker_reward
 
 
+
 '''
 num: worker number
 history_num: the number of history positive and negative unit-price for each worker
@@ -196,13 +224,13 @@ reservation_value/speed: 1.0 as baseline
 capacity: the maximum order number of each worker
 '''
 class Worker():
-    def __init__(self, buffer, lr=0.0001, gamma=0.99, eps_clip=0.2, max_step=60, history_num=3, num=1000, reservation_value=None, speed=None, capacity=None, group=None, device=None, zone_table_path = "./data/zone_table.csv", model_path = None,  worker_model_path = None):
+    def __init__(self, buffer, lr=0.0001, gamma=0.99, eps_clip=0.2, max_step=60, history_num=3, num=1000, reservation_value=None, speed=None, capacity=None, group=None, device=None, zone_table_path = "../data/zone_table.csv", model_path = None,  worker_model_path = None, njobs=24):
         super().__init__()
 
         self.buffer = buffer
         self.gamma = gamma
         self.eps_clip = eps_clip
-        self.device =device
+        self.device = device
         self.history_num = history_num
 
         self.max_step = max_step
@@ -212,25 +240,30 @@ class Worker():
 
         self.Q_target = Q_Net(state_size=7, history_order_size=4, current_order_size=5, hidden_dim=64, head=2, bi_direction=False).to(device)
         self.Q_training = Q_Net(state_size=7, history_order_size=4, current_order_size=5, hidden_dim=64, head=2, bi_direction=False).to(device)
-        if model_path is not None:
-            self.Q_target.load_state_dict(torch.load(model_path))
-            self.Q_training.load_state_dict(torch.load(model_path))
-        for param in self.Q_target.parameters():
-            param.requires_grad = False
-        self.Q_target.eval()
-
+        # if model_path is not None:
+        #     self.Q_target.load_state_dict(torch.load(model_path))
+        #     self.Q_training.load_state_dict(torch.load(model_path))
+        # if model_path is not None:
+        #     self.Q_target.load_state_dict(torch.load(model_path,map_location=torch.device('cpu')))
+        #     self.Q_training.load_state_dict(torch.load(model_path,map_location=torch.device('cpu')))
 
         self.Worker_Q_training = Worker_Q_Net(input_size=14, history_order_size=4, output_dim=2, bi_direction=False).to(device)
         self.Worker_Q_target = Worker_Q_Net(input_size=14, history_order_size=4, output_dim=2, bi_direction=False).to(device)
-        if worker_model_path is not None:
-            self.Worker_Q_training.load_state_dict(torch.load(worker_model_path))
-            self.Worker_Q_target.load_state_dict(torch.load(worker_model_path))
+        # if worker_model_path is not None:
+        #     self.Worker_Q_training.load_state_dict(torch.load(worker_model_path))
+        #     self.Worker_Q_target.load_state_dict(torch.load(worker_model_path))
+        # if worker_model_path is not None:
+        #     self.Worker_Q_training.load_state_dict(torch.load(worker_model_path,map_location=torch.device('cpu')))
+        #     self.Worker_Q_target.load_state_dict(torch.load(worker_model_path,map_location=torch.device('cpu')))
+
+        self.load(model_path,worker_model_path,self.device)
+        for param in self.Q_target.parameters():
+            param.requires_grad = False
+        self.Q_target.eval()
         for param in self.Worker_Q_target.parameters():
             param.requires_grad = False
         self.Worker_Q_target.eval()
-
         self.update_Qtarget(tau=0.0)
-
 
         print('Platform total parameters:', sum(p.numel() for p in self.Q_training.parameters() if p.requires_grad))
         print('Worker total parameters:', sum(p.numel() for p in self.Worker_Q_training.parameters() if p.requires_grad))
@@ -240,6 +273,8 @@ class Worker():
         self.loss_func = nn.MSELoss()
 
         # self.reset(max_step,num,reservation_value, speed, capacity, group)
+
+        self.njobs = njobs
 
     def reset(self, max_step=60, num=1000, reservation_value=None, speed=None, capacity=None, group=None):
         self.max_step = max_step
@@ -270,30 +305,32 @@ class Worker():
             self.group = group
 
 
-        self.positive_history = np.zeros([self.num,self.history_num])
-        self.negative_history = np.zeros([self.num, self.history_num])
-        for i in range(self.num):
-            index_pos=0
-            index_neg=0
-            while index_neg<self.history_num or index_pos<self.history_num:
-                record = np.random.randn((5*self.history_num))
-                record = np.abs(record*0.05 + self.reservation_value[i])
-                rand = np.random.rand((5*self.history_num))
-                for j in range(5*self.history_num):
-                    acc_rate = accept_rate(record[j],self.reservation_value[i])
-                    if rand[j]<=acc_rate and index_pos<self.history_num:
-                        self.positive_history[i,index_pos] = record[j]
-                        index_pos+=1
-                    elif rand[j]>acc_rate and index_neg<self.history_num:
-                        self.negative_history[i,index_neg] = record[j]
-                        index_neg+=1
-                    if index_pos>=self.history_num and index_pos>=self.history_num:
-                        break
-        '''
-        use single EMA to replace history record (reduce state space size) 
-        '''
-        self.positive_history = np.mean(self.positive_history,axis=-1)
-        self.negative_history = np.mean(self.negative_history,axis=-1)
+        # self.positive_history = np.zeros([self.num,self.history_num])
+        # self.negative_history = np.zeros([self.num, self.history_num])
+        # for i in range(self.num):
+        #     index_pos=0
+        #     index_neg=0
+        #     while index_neg<self.history_num or index_pos<self.history_num:
+        #         record = np.random.randn((5*self.history_num))
+        #         record = np.abs(record*0.05 + self.reservation_value[i])
+        #         rand = np.random.rand((5*self.history_num))
+        #         for j in range(5*self.history_num):
+        #             acc_rate = accept_rate(record[j],self.reservation_value[i])
+        #             if rand[j]<=acc_rate and index_pos<self.history_num:
+        #                 self.positive_history[i,index_pos] = record[j]
+        #                 index_pos+=1
+        #             elif rand[j]>acc_rate and index_neg<self.history_num:
+        #                 self.negative_history[i,index_neg] = record[j]
+        #                 index_neg+=1
+        #             if index_pos>=self.history_num and index_pos>=self.history_num:
+        #                 break
+        # '''
+        # use single EMA to replace history record (reduce state space size)
+        # '''
+        # self.positive_history = np.mean(self.positive_history,axis=-1)
+        # self.negative_history = np.mean(self.negative_history,axis=-1)
+        self.positive_history = self.reservation_value + np.abs(np.random.randn(self.num)) * 0.005
+        self.negative_history = self.reservation_value - np.abs(np.random.randn(self.num)) * 0.005
 
         '''
         observation space
@@ -325,6 +362,13 @@ class Worker():
         self.experience = [[] for _ in range(self.num)] # When each item gets full, it will be added to buffer.
         self.Pass_Travel_Time = []
 
+        self.price = [[] for _ in range(self.num)]
+        self.salary = [0.0]*self.num
+        self.work_load = [0.0]*self.num
+        self.worker_assign_order = [0.0]*self.num
+        self.worker_reject_order = [0.0]*self.num
+
+
     def observe(self, order, current_time, exploration_rate=0):
         self.Q_training.eval()
         torch.set_grad_enabled(False)
@@ -338,17 +382,32 @@ class Worker():
         x1, x2, x3 = norm(torch.from_numpy(order_state).to(self.device),torch.from_numpy(worker_state).to(self.device),torch.from_numpy(self.current_orders).to(self.device))
         q_value, price_mu, price_sigma = self.Q_training(x1, x2, x3, torch.from_numpy(self.current_order_num).to(self.device))
         exploration_matrix = torch.rand_like(q_value)
-        q_value[exploration_matrix<exploration_rate] = 1e8
+        q_value[exploration_matrix<exploration_rate] = INF
         # 4. delete the Q value of not available workers
-        q_value[self.observe_space[:,3]!=0] = -1e8
+        q_value[self.observe_space[:,3]!=0] = -INF
         return q_value.cpu().detach().numpy(), price_mu.cpu().detach().numpy(), price_sigma.cpu().detach().numpy(), order_state, worker_state
 
     def update(self, feedback_table, new_route_table ,new_route_time_table ,new_remaining_time_table ,new_total_travel_time_table, worker_feed_back_table, current_time, final_step=False):
-        results = Parallel(n_jobs=24)(
+        # update each worker state parallely
+        results = Parallel(n_jobs=self.njobs)(
             delayed(single_update)(self.observe_space[i], self.current_orders[i], self.current_order_num[i], self.positive_history[i], self.negative_history[i], self.speed[i], self.capacity[i], self.travel_route[i], self.travel_time[i], self.experience[i], feedback_table[i], new_route_table[i], new_route_time_table[i], new_remaining_time_table[i], new_total_travel_time_table[i], worker_feed_back_table[i], self.reservation_value[i])
             for i in range(self.num))
 
         for i in range(len(results)):
+            # take some record
+            if feedback_table[i] is not None: # assign new order
+                self.worker_assign_order[i] += 1
+                if feedback_table[i][-1] == -1: # reject order
+                    self.worker_reject_order[i] += 1
+                else:
+                    price = feedback_table[i][1][0]
+                    work_load = feedback_table[i][1][2]
+                    salary = feedback_table[i][1][3]
+                    self.work_load[i] += work_load
+                    self.salary[i] += salary
+                    self.price[i].append(price)
+
+            # update state
             self.observe_space[i], self.current_orders[i], self.current_order_num[i], self.positive_history[i], self.negative_history[i], self.travel_route[i], self.travel_time[i], self.experience[i] \
                 = results[i][0], results[i][1], results[i][2], results[i][3], results[i][4], results[i][5], results[i][6], results[i][7]
             if results[i][8] is not None:
@@ -375,6 +434,23 @@ class Worker():
     def save(self, path1, path2):
         torch.save(self.Q_training.state_dict(), path1)
         torch.save(self.Worker_Q_training.state_dict(), path2)
+
+    def load(self, path1 = None, path2 = None, device = torch.device("cpu")):
+        if device == torch.device("cpu"):
+            if path1 is not None:
+                self.Q_target.load_state_dict(torch.load(path1,map_location=torch.device('cpu')))
+                self.Q_training.load_state_dict(torch.load(path1,map_location=torch.device('cpu')))
+            if path2 is not None:
+                self.Worker_Q_training.load_state_dict(torch.load(path2,map_location=torch.device('cpu')))
+                self.Worker_Q_target.load_state_dict(torch.load(path2,map_location=torch.device('cpu')))
+        else:
+            if path1 is not None:
+                self.Q_target.load_state_dict(torch.load(path1))
+                self.Q_training.load_state_dict(torch.load(path1))
+            if path2 is not None:
+                self.Worker_Q_training.load_state_dict(torch.load(path2))
+                self.Worker_Q_target.load_state_dict(torch.load(path2))
+
 
     def update_Qtarget(self,tau=0.005):
         for target_param, train_param in zip(self.Q_target.parameters(), self.Q_training.parameters()):
@@ -408,7 +484,12 @@ class Worker():
             next_state_value, _, _ = self.Q_target(x1, x2, x3, order_num_next)
             # next_state_value, _, _ = self.Q_training(x1, x2, x3, order_num_next)
             next_worker_q_value = self.Worker_Q_target(torch.concat([x1, x2, reservation_value.unsqueeze(-1), price_next.unsqueeze(-1)], dim=-1), x3, order_num_next)
-            next_worker_q_value = torch.max(next_worker_q_value.detach(),dim=-1)[0]
+
+            # next_worker_q_value = torch.max(next_worker_q_value.detach(),dim=-1)[0]
+            next_worker_q_value_index = torch.max(self.Worker_Q_training(torch.concat([x1, x2, reservation_value.unsqueeze(-1), price_next.unsqueeze(-1)], dim=-1), x3, order_num_next).detach(),dim=-1)[1]
+            next_worker_q_value = next_worker_q_value[torch.arange(next_worker_q_value.size(0)), next_worker_q_value_index]
+
+
             worker_target = worker_reward + self.gamma** delta_t * next_worker_q_value
             worker_target = worker_target.float()
 
@@ -420,16 +501,17 @@ class Worker():
             normal_dist = torch.distributions.Normal(price_mu, price_sigma)
             price_log_prob = normal_dist.log_prob(price_old)
             ratio = torch.exp(price_log_prob - price_log_prob_old)
-            advantage = (td_target - current_state_value).detach() # TODO: currently, for simplify, only use one step td-error to approximate the advantage (may need to be changed)
+            advantage = (td_target - current_state_value).detach() # currently, for simplify, only use one step td-error to approximate the advantage (may need to be changed)
 
             surr1 = ratio * advantage
             surr2 = torch.clamp(ratio,1-self.eps_clip,1+self.eps_clip) * advantage
             actor_loss = torch.mean(-torch.min(surr1, surr2))
 
-            loss = critic_loss + actor_loss
+            # train platform_net
+            loss = critic_loss + actor_loss * 20
             self.optim.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.Q_training.parameters(), 1.0)  # avoid gradient explosion
+            # torch.nn.utils.clip_grad_norm_(self.Q_training.parameters(), 1.0)  # avoid gradient explosion
 
             has_nan = False
             for name, param in self.Q_training.named_parameters():
@@ -449,7 +531,7 @@ class Worker():
             loss = self.loss_func(current_worker_q_value, worker_target)
             self.optim_worker.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.Worker_Q_training.parameters(), 1.0)  # avoid gradient explosion
+            # torch.nn.utils.clip_grad_norm_(self.Worker_Q_training.parameters(), 1.0)  # avoid gradient explosion
 
             has_nan = False
             for name, param in self.Worker_Q_training.named_parameters():
@@ -476,25 +558,28 @@ input:
 current state: observe_space, current_orders, current_orders_num, positive_history, negative_history, speed, current_travel_route, current_travel_time
 experience
 action / guidance of next state: feedback, new_route ,new_route_time ,new_remaining_time ,new_total_travel_time
+information about worker network: worker_feed_back, reservation_value
 
 output:
 new state: observe_space, current_orders, current_orders_num, positive_history, negative_history, current_travel_route, current_travel_time (speed is fixed, no need to return)
 experience
 full_experience: not None only if an experience is full filled
 finished_order_time: not None only if any order is finished
+worker_reward
 '''
 def single_update(observe_space, current_orders, current_orders_num, positive_history, negative_history, speed, capacity, current_travel_route, current_travel_time, experience, feedback, new_route ,new_route_time ,new_remaining_time ,new_total_travel_time, worker_feed_back, reservation_value):
     full_experience = None
     finished_order_time = None
     current_orders_num = int(current_orders_num)
     worker_reward=0
+    rate = 0.5
     # take action
     if feedback is not None:
         worker_reward=worker_feed_back[1]
         if feedback[-1] == -1: # -1 means reject
-            negative_history = negative_history * 0.8 + feedback[1][0] * 0.2
+            negative_history = negative_history * rate + feedback[1][0] * (1-rate)
         else: # accept order
-            positive_history = positive_history * 0.8 + feedback[1][0] * 0.2
+            positive_history = positive_history * rate + feedback[1][0] * (1-rate)
 
         # update experience
         if len(experience) > 0:

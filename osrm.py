@@ -133,3 +133,39 @@ def get_map(route,originpoint, destinationpoints,m):#real_dests
         ).add_to(m)
 
     return m
+
+
+if __name__ == '__main__':
+    # test
+    origin_point = (22.315907798976195, 114.26433801921063)  # 坑口
+    # destination_points = [(22.516493428359418, 114.06852796909149)] #落马洲
+    # destination_points = [(22.338558020789957, 114.2631421385211)] #HKUST
+    destination_points = [(22.294420087232346, 114.13370019814874)]  # HKU
+    # destination_points = [(22.516493428359418, 114.06852796909149), (22.294420087232346, 114.13370019814874), (22.338558020789957, 114.2631421385211)] # 落马洲, HKU, HKUST
+
+    route, route_t, t, dis = TSP_route(origin_point, destination_points)
+
+    print(route)
+    print(route_t)
+    print(t)
+    print(dis)
+    print(np.sum(route_t))
+    #
+    #
+    # print(np.sum(route_t)/60)
+    #
+    # print(len(route))
+    # print(len(route_t))
+
+    # print(geodistance())
+
+    # route, route_t, t = TSP_route(origin_point,destination_points)[:-1]
+    #
+    # # Do some visualization if you want
+    # # m = folium.Map(location=[22.34022923928267, 114.26263474465348],
+    # #                  zoom_start=13)
+    # #
+    # # map = get_map(route, origin_point, destination_points, destination_points, m)
+    # # map.save("test.html")
+    #
+    # print("route total time for each destination is", t)

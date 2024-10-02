@@ -4,19 +4,27 @@ from joblib import Parallel, delayed
 from scipy.optimize import linear_sum_assignment
 import numpy as np
 import random
-from Worker import accept_rate, norm
+# from Worker import accept_rate, norm
+from Worker import norm
 
 class Platform():
-    def __init__(self,discount_factor=0.99):
+    def __init__(self,discount_factor=0.99, njobs=24):
         super().__init__()
         self.reset(discount_factor)
+        self.njobs = njobs
 
     def reset(self,discount_factor=0.99):
         self.discount_factor = discount_factor
         self.Total_Reward = 0
-        self.Total_Detour = []
+        # self.Total_Detour = []
         self.PickUp = 0
         self.worker_reject = 0
+
+        self.direct_time = []
+        self.workload = []
+        # self.detour_time = [] # work_time - direct_time
+        self.valid_distance = []
+
 
     def assign(self,q_matrix):
         # TODO: set non-zero threshold
@@ -52,7 +60,7 @@ class Platform():
         accepted_orders = []
         worker_feed_back_table = []
 
-        results = Parallel(n_jobs=24)(
+        results = Parallel(n_jobs=self.njobs)(
             delayed(excute)(observe[i], reservation_value[i], speed[i], current_order[i], current_order_num[i], assignment[i], new_orders_state, price_mu[i], price_sigma[i], reward_func, punish_rate, threshold, current_time, worker_Q_Net, exploration_rate, worker_reject_punishment, device, worker_state[i])
             for i
             in range(observe.shape[0]))
@@ -68,10 +76,10 @@ class Platform():
             new_route_time_table.append(result[2])
             new_remaining_time_table.append(result[3])
             new_total_travel_time_table.append(result[4])
-            timeout = result[5]
+            # timeout = result[5]
             if assignment[i] is not None and result[0] is not None:
-                self.Total_Reward += self.discount_factor ** current_time * result[0][2] # '''result[0][2]是reward'''
-                self.Total_Detour.append(timeout)
+                self.Total_Reward += self.discount_factor ** current_time * result[0][2] # '''result[0][2]: reward'''
+                # self.Total_Detour.append(timeout)
 
             if result[6] is not None:
                 accepted_orders.append(result[6])
@@ -79,6 +87,11 @@ class Platform():
             elif result[0] is not None:
                 self.worker_reject += 1
             worker_feed_back_table.append(result[7])
+
+            if result[8] is not None:
+                self.direct_time.append(result[8][0])
+                self.workload.append(result[8][1])
+                self.valid_distance.append(result[8][2])
 
         return feedback_table, new_route_table ,new_route_time_table ,new_remaining_time_table ,new_total_travel_time_table, accepted_orders, worker_feed_back_table
 
@@ -110,12 +123,16 @@ assignment: assignment which order to this worker
 new_orders_state: the state matrix of all new orders
 price_mu_vector, price_sigma_vector: the price distribution of each order (of this worker)
 reward_func, punish_rate, threshold: to calculate the reward
+current_time, worker_Q_Net, exploration_rate, worker_reject_punishment, device, worker_state: used for worker network
 
 output:
 feedback: [[observe, current_order, current_order_num, new_orders_state[assignment], time], [price, price_log_prop], reward, pickup_time] -- (s,a,r,pick_t)
 new_route, new_route_time: route/time of each nodes which the worker will pass
 new_time, new_total_travel_time: remaining/total time of each order
 timeout: how many orders will be timeout after this assignment
+accept_order: accepted order number
+worker_feedback: used for worker network
+log: direct transportation time & workload time
 '''
 def excute(observe, reservation_value, speed, current_order, current_order_num, assignment, new_orders_state, price_mu_vector, price_sigma_vector, reward_func, punish_rate, threshold, current_time, worker_Q_Net, exploration_rate, worker_reject_punishment, device, worker_state):
     current_order_num = int(current_order_num)
@@ -184,20 +201,22 @@ def excute(observe, reservation_value, speed, current_order, current_order_num, 
                     work_add = new_total_travel_time[-1] # no previous work
                 salary = work_add * price
                 reward = reward_func(time_add / speed, timeout, salary, direct_distance)
-                feedback = [[observe,current_order,current_order_num,new_orders_state[assignment], current_time], [price,price_log_prop], reward, pickup_time[0]]
+                feedback = [[observe,current_order,current_order_num,new_orders_state[assignment], current_time], [price,price_log_prop,work_add,salary], reward, pickup_time[0]]
 
                 worker_reward = work_add * (price-reservation_value)
                 worker_feedback = [1,worker_reward,price]
 
-                return feedback, new_route, new_route_time, new_time, new_total_travel_time, timeout, accept_order, worker_feedback
+                log = [direct_time, work_add, direct_distance]
+
+                return feedback, new_route, new_route_time, new_time, new_total_travel_time, timeout, accept_order, worker_feedback, log
             else: # routing failure --> decline the assignment
-                return None, None, None, None, None, 0, None, None
+                return None, None, None, None, None, 0, None, None, None
         else: #reject
             reward = - punish_rate / price # to help model increase the price
             feedback = [[observe, current_order, current_order_num, new_orders_state[assignment], current_time],
                         [price, price_log_prop], reward, -1]
 
             worker_feedback = [0,-worker_reject_punishment,price]
-            return feedback, None, None, None, None, 0, None, worker_feedback
+            return feedback, None, None, None, None, 0, None, worker_feedback, None
     else:
-        return None, None, None, None, None, 0, None, None
+        return None, None, None, None, None, 0, None, None, None
