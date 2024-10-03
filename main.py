@@ -20,13 +20,13 @@ def get_args():
     parser.add_argument('--converge_epoch', type=int, default=5)
     parser.add_argument('--minimum_episode', type=int, default=500)
     parser.add_argument('--worker_num', type=int, default=1000) #test: 50
-    parser.add_argument('--buffer_capacity', type=int, default=1e5)
+    parser.add_argument('--buffer_capacity', type=int, default=30000)
     parser.add_argument('--demand_sample_rate', type=float, default=0.95)
     parser.add_argument('--order_max_wait_time', type=float, default=5.0)
     parser.add_argument('--order_threshold', type=float, default=40.0)
-    parser.add_argument('--reward_parameter', type=float, nargs='+', default=[5.0,3.0,3.0,2.0,1.0,4.0]) #ori: 10.0,5.0,3.0,2.0,1.0,4.0
+    parser.add_argument('--reward_parameter', type=float, nargs='+', default=[2.0,5.0,4.0,3.0,1.0,5.0]) #ori: 10.0,5.0,3.0,2.0,1.0,4.0
     parser.add_argument('--reject_punishment', type=float, default=0.0)
-    parser.add_argument('--worker_reject_punishment', type=float, default=0.0)
+    parser.add_argument('--worker_reject_punishment', type=float, default=0.5)
 
     parser.add_argument('--epsilon', type=float, default=1.0)
     parser.add_argument('--epsilon_decay_rate', type=float, default=0.99)
@@ -101,6 +101,7 @@ def main():
 
     best_reward = -1e-8
     best_epoch = 0
+    dic_list = []
 
     j = args.init_episode
     exploration_rate = max(exploration_rate * (epsilon_decay_rate**j), epsilon_final)
@@ -109,7 +110,7 @@ def main():
         j += 1
 
         reservation_value, speed, capacity, group = group_generation_func2(args.worker_num)
-        worker.reset(max_step=args.max_step, num= args.worker_num, reservation_value=reservation_value, speed=speed, capacity=capacity, group=group)
+        worker.reset(max_step=args.max_step, num= args.worker_num, reservation_value=reservation_value, speed=speed, capacity=capacity, group=group, train=True)
         platform.reset(discount_factor = args.gamma)
         demand.reset(episode_time=0, p_sample=args.demand_sample_rate, wait_time=args.order_max_wait_time)
         exploration_rate = max(exploration_rate * epsilon_decay_rate, epsilon_final)
@@ -152,7 +153,7 @@ def main():
         if j % args.eval_episode == 0:
             reservation_value, speed, capacity, group = group_generation_func2(args.worker_num)
             worker.reset(max_step=args.max_step, num=args.worker_num, reservation_value=reservation_value, speed=speed,
-                         capacity=capacity, group=group)
+                         capacity=capacity, group=group, train=False)
             platform.reset(discount_factor=args.gamma)
             demand.reset(episode_time=0, p_sample=args.demand_sample_rate, wait_time=args.order_max_wait_time)
             pbar = tqdm.tqdm(range(args.max_step))
@@ -190,6 +191,7 @@ def main():
                 file.write(log + "\n")
 
             dic = {
+                'episode': j,
                 'reservation_value': reservation_value,
                 'worker_reward': worker.worker_reward,
                 'price': worker.price,
@@ -199,13 +201,17 @@ def main():
                 'pos_history': worker.positive_history,
                 'neg_history': worker.negative_history
             }
+            # with open('log.pkl', 'wb') as f:
+            #     pickle.dump(dic, f)
+            dic_list.append(dic)
             with open('log.pkl', 'wb') as f:
-                pickle.dump(dic, f)
+                pickle.dump(dic_list, f)
 
+            w = 1.0
             if j >= args.minimum_episode:
-                if total_reward + worker_reward * 30 > best_reward:
+                if total_reward + worker_reward * w > best_reward:
                     best_epoch = 0
-                    best_reward = total_reward + worker_reward * 30
+                    best_reward = total_reward + worker_reward * w
                     worker.save("platform_best.pth", "worker_best.pth")
                 else:
                     best_epoch += 1

@@ -2,12 +2,13 @@ import torch
 import torch.nn as nn
 
 class MLP(nn.Module):
-    def __init__(self, layer_sizes=[64,64,64,1], arl=False):
+    def __init__(self, layer_sizes=[64,64,64,1], arl=False, dropout=0.3):
         super().__init__()
         self.arl = arl
         self.attention = nn.Sequential(
             nn.Linear(layer_sizes[0],layer_sizes[0]),
             nn.ReLU(),
+            nn.Dropout(dropout),
             nn.Linear(layer_sizes[0],layer_sizes[0])
         )
 
@@ -16,6 +17,7 @@ class MLP(nn.Module):
             raise ValueError()
         self.layers = nn.ModuleList()
         self.act = nn.LeakyReLU(negative_slope=0.01, inplace=True)
+        self.dropout = nn.Dropout(dropout)
         for i in range(len(layer_sizes) - 1):
             self.layers.append(nn.Linear(layer_sizes[i], layer_sizes[i + 1]))
 
@@ -23,20 +25,20 @@ class MLP(nn.Module):
         if self.arl:
             x = x * self.attention(x)
         for layer in self.layers[:-1]:
-            x = self.act(layer(x))
+            x = self.dropout(self.act(layer(x)))
         x = self.layers[-1](x)
         return x
 
 class LSTM(nn.Module):
-    def __init__(self,input_size, output_size, hidden_size=64):
+    def __init__(self,input_size, output_size, hidden_size=64, dropout=0.3):
         super().__init__()
-        self.lstm = nn.LSTM(input_size, hidden_size, batch_first=True, bidirectional=False)
+        self.lstm = nn.LSTM(input_size, hidden_size, batch_first=True, bidirectional=False, dropout=dropout)
         # self.fc = nn.Sequential(
         #     nn.Linear(hidden_size, hidden_size // 2 ),
         #     nn.ReLU(),
         #     nn.Linear(hidden_size // 2 , output_size),
         # )
-        self.fc = MLP([hidden_size, hidden_size // 2, output_size])
+        self.fc = MLP([hidden_size, hidden_size // 2, output_size], dropout=dropout)
 
     def forward(self,x,valid_index=None):
         self.lstm.flatten_parameters()
@@ -50,17 +52,17 @@ class LSTM(nn.Module):
         return x
 
 class BiLSTM(nn.Module):
-    def __init__(self,input_size, output_size, hidden_size=64):
+    def __init__(self,input_size, output_size, hidden_size=64, dropout=0.3):
         super().__init__()
-        self.lstm1 = nn.LSTM(input_size, hidden_size // 2, batch_first=True, bidirectional=False)
-        self.lstm2 = nn.LSTM(input_size, hidden_size // 2, batch_first=True, bidirectional=False)
+        self.lstm1 = nn.LSTM(input_size, hidden_size // 2, batch_first=True, bidirectional=False, dropout=dropout)
+        self.lstm2 = nn.LSTM(input_size, hidden_size // 2, batch_first=True, bidirectional=False, dropout=dropout)
 
         # self.fc = nn.Sequential(
         #     nn.Linear(hidden_size, hidden_size // 2 ),
         #     nn.ReLU(),
         #     nn.Linear(hidden_size // 2 , output_size),
         # )
-        self.fc = MLP([hidden_size, hidden_size // 2, output_size])
+        self.fc = MLP([hidden_size, hidden_size // 2, output_size], dropout=dropout)
 
 
     def forward(self,x,valid_index=None):
@@ -86,22 +88,23 @@ class BiLSTM(nn.Module):
         x = torch.cat((x1, x2), dim=-1)
         x = self.fc(x)
         return x
+
 class Worker_Net(nn.Module):
-    def __init__(self, state_size=7, order_size=4, output_dim=32, bi_direction=False):
+    def __init__(self, state_size=7, order_size=4, output_dim=32, bi_direction=False, dropout=0.3):
         super().__init__()
         if bi_direction:
-            self.lstm = BiLSTM(order_size,32)
+            self.lstm = BiLSTM(order_size,32, dropout=dropout)
         else:
-            self.lstm = LSTM(order_size,32)
+            self.lstm = LSTM(order_size,32, dropout=dropout)
 
         # self.encode = nn.Sequential(
         #     nn.Linear(state_size,16),
         #     nn.ReLU(),
         #     nn.Linear(16,32)
         # )
-        self.encode = MLP([state_size,16,32],arl=True)
+        self.encode = MLP([state_size,16,32], arl=True, dropout=dropout)
 
-        self.mlp = MLP([64,64,32,output_dim])
+        self.mlp = MLP([64,64,32,output_dim], dropout=dropout)
 
     def forward(self,x_state,x_order,order_num=None):
         x_order = self.lstm(x_order,order_num)
@@ -111,9 +114,9 @@ class Worker_Net(nn.Module):
         return y
 
 class Order_Net(nn.Module):
-    def __init__(self, state_size=5, output_size=32):
+    def __init__(self, state_size=5, output_size=32, dropout=0.3):
         super().__init__()
-        self.model = MLP([state_size,16,32,output_size],arl=True)
+        self.model = MLP([state_size,16,32,output_size], arl=True, dropout=dropout)
 
     def forward(self,x):
         y = self.model(x)
@@ -143,10 +146,10 @@ class Attention_Score(nn.Module):
         return attn_matrix
 
 class Q_Net(nn.Module):
-    def __init__(self, state_size=7, history_order_size=4, current_order_size=5, hidden_dim=64, head=2, bi_direction=False):
+    def __init__(self, state_size=7, history_order_size=4, current_order_size=5, hidden_dim=64, head=2, bi_direction=False, dropout=0.3):
         super().__init__()
-        self.worker_net = Worker_Net(state_size=state_size, order_size=history_order_size, output_dim=hidden_dim, bi_direction=bi_direction)
-        self.order_net = Order_Net(state_size=current_order_size, output_size=hidden_dim)
+        self.worker_net = Worker_Net(state_size=state_size, order_size=history_order_size, output_dim=hidden_dim, bi_direction=bi_direction, dropout=dropout)
+        self.order_net = Order_Net(state_size=current_order_size, output_size=hidden_dim, dropout=dropout)
         self.attention = Attention_Score(input_dims=hidden_dim,hidden_dims=hidden_dim,head=head)
         self.attention_price_mu = Attention_Score(input_dims=hidden_dim,hidden_dims=hidden_dim,head=head)
         self.attention_price_sigma = Attention_Score(input_dims=hidden_dim,hidden_dims=hidden_dim,head=head)
@@ -169,9 +172,9 @@ class Q_Net(nn.Module):
         return q_matrix,price_mu_matrix,price_sigma_matrix
 
 class Worker_Q_Net(nn.Module):
-    def __init__(self, input_size=14, history_order_size=4, output_dim=2, bi_direction=False): # (7+1)+(5+1)=14
+    def __init__(self, input_size=14, history_order_size=4, output_dim=2, bi_direction=False, dropout=0.3): # (7+1)+(5+1)=14
         super().__init__()
-        self.worker_net = Worker_Net(state_size=input_size, order_size=history_order_size, output_dim=output_dim, bi_direction=bi_direction)
+        self.worker_net = Worker_Net(state_size=input_size, order_size=history_order_size, output_dim=output_dim, bi_direction=bi_direction, dropout=dropout)
 
     # def forward(self,order,price,x_state,reservation_value,x_order,order_num=None):
     #     order_num = order_num.int()

@@ -147,7 +147,7 @@ def excute(observe, reservation_value, speed, current_order, current_order_num, 
         if rand<exploration_rate:
             acc_rate = 0.5
         else:
-            worker_Q_Net.eval()
+            # worker_Q_Net.eval()
             torch.set_grad_enabled(False)
             order_norm, x_norm, x_order_norm = norm(np.expand_dims(new_orders_state[assignment], axis=0),
                                                     np.expand_dims(worker_state, axis=0),
@@ -194,11 +194,15 @@ def excute(observe, reservation_value, speed, current_order, current_order_num, 
 
                 timeout = np.sum(new_total_travel_time / speed > threshold) # how many orders will be over time
                 time_add = np.sum(new_total_travel_time) - original_total_travel_time # total added time of all orders
+
                 # added workload
-                if len(new_total_travel_time)>1:
-                    work_add = new_total_travel_time[-1] + np.max(new_total_travel_time[:-1] - current_order[:current_order_num,3])
-                else:
-                    work_add = new_total_travel_time[-1] # no previous work
+                work_add = np.max(new_total_travel_time) - np.max(current_order[:, 3])
+                # if len(new_total_travel_time)>1:
+                #     work_add = np.max(new_total_travel_time) - np.max(current_order[:,3])
+                # else:
+                #     work_add = new_total_travel_time[-1] # no previous work
+
+
                 salary = work_add * price
                 reward = reward_func(time_add / speed, timeout, salary, direct_distance)
                 feedback = [[observe,current_order,current_order_num,new_orders_state[assignment], current_time], [price,price_log_prop,work_add,salary], reward, pickup_time[0]]

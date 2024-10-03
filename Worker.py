@@ -238,8 +238,8 @@ class Worker():
         self.zone_lookup = pd.read_csv(zone_table_path)
         self.coordinate_lookup = np.array(self.zone_lookup[['lat','lon']])
 
-        self.Q_target = Q_Net(state_size=7, history_order_size=4, current_order_size=5, hidden_dim=64, head=2, bi_direction=False).to(device)
-        self.Q_training = Q_Net(state_size=7, history_order_size=4, current_order_size=5, hidden_dim=64, head=2, bi_direction=False).to(device)
+        self.Q_training = Q_Net(state_size=7, history_order_size=4, current_order_size=5, hidden_dim=64, head=2, bi_direction=False, dropout=0.3).to(device)
+        self.Q_target = Q_Net(state_size=7, history_order_size=4, current_order_size=5, hidden_dim=64, head=2, bi_direction=False, dropout=0.3).to(device)
         # if model_path is not None:
         #     self.Q_target.load_state_dict(torch.load(model_path))
         #     self.Q_training.load_state_dict(torch.load(model_path))
@@ -247,8 +247,8 @@ class Worker():
         #     self.Q_target.load_state_dict(torch.load(model_path,map_location=torch.device('cpu')))
         #     self.Q_training.load_state_dict(torch.load(model_path,map_location=torch.device('cpu')))
 
-        self.Worker_Q_training = Worker_Q_Net(input_size=14, history_order_size=4, output_dim=2, bi_direction=False).to(device)
-        self.Worker_Q_target = Worker_Q_Net(input_size=14, history_order_size=4, output_dim=2, bi_direction=False).to(device)
+        self.Worker_Q_training = Worker_Q_Net(input_size=14, history_order_size=4, output_dim=2, bi_direction=False, dropout=0.3).to(device)
+        self.Worker_Q_target = Worker_Q_Net(input_size=14, history_order_size=4, output_dim=2, bi_direction=False, dropout=0.3).to(device)
         # if worker_model_path is not None:
         #     self.Worker_Q_training.load_state_dict(torch.load(worker_model_path))
         #     self.Worker_Q_target.load_state_dict(torch.load(worker_model_path))
@@ -276,7 +276,14 @@ class Worker():
 
         self.njobs = njobs
 
-    def reset(self, max_step=60, num=1000, reservation_value=None, speed=None, capacity=None, group=None):
+    def reset(self, max_step=60, num=1000, reservation_value=None, speed=None, capacity=None, group=None, train=True):
+        if train:
+            self.Worker_Q_training.train()
+            self.Q_training.train()
+        else:
+            self.Worker_Q_training.eval()
+            self.Q_training.eval()
+
         self.max_step = max_step
         self.num = num
 
@@ -370,7 +377,7 @@ class Worker():
 
 
     def observe(self, order, current_time, exploration_rate=0):
-        self.Q_training.eval()
+        # self.Q_training.eval()
         torch.set_grad_enabled(False)
         # 1. contstruct the worker state
         # print(self.observe_space.shape, self.speed.shape, self.capacity.shape, self.positive_history.shape, self.negative_history.shape)
@@ -468,6 +475,8 @@ class Worker():
         torch.set_grad_enabled(True)
         self.Q_training.train()
         self.Worker_Q_training.train()
+        self.Q_target.eval()
+        self.Worker_Q_target.eval()
         for _ in pbar:
         # for _ in range(train_times):
             worker_state, order_state, order_num, new_order_state, \
@@ -571,15 +580,15 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
     full_experience = None
     finished_order_time = None
     current_orders_num = int(current_orders_num)
-    worker_reward=0
-    rate = 0.5
+    worker_reward = 0
+    update_rate = 0.1
     # take action
     if feedback is not None:
         worker_reward=worker_feed_back[1]
         if feedback[-1] == -1: # -1 means reject
-            negative_history = negative_history * rate + feedback[1][0] * (1-rate)
+            negative_history = negative_history * update_rate + feedback[1][0] * (1-update_rate)
         else: # accept order
-            positive_history = positive_history * rate + feedback[1][0] * (1-rate)
+            positive_history = positive_history * update_rate + feedback[1][0] * (1-update_rate)
 
         # update experience
         if len(experience) > 0:

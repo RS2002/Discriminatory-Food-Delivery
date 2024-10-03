@@ -137,12 +137,14 @@ def get_map(route,originpoint, destinationpoints,m):#real_dests
 
 if __name__ == '__main__':
     # test
-    origin_point = (22.315907798976195, 114.26433801921063)  # 坑口
+    # origin_point = (22.315907798976195, 114.26433801921063)  # 坑口
     # destination_points = [(22.516493428359418, 114.06852796909149)] #落马洲
     # destination_points = [(22.338558020789957, 114.2631421385211)] #HKUST
-    destination_points = [(22.294420087232346, 114.13370019814874)]  # HKU
+    # destination_points = [(22.294420087232346, 114.13370019814874)]  # HKU
     # destination_points = [(22.516493428359418, 114.06852796909149), (22.294420087232346, 114.13370019814874), (22.338558020789957, 114.2631421385211)] # 落马洲, HKU, HKUST
 
+    origin_point = (22.499, 114.143)
+    destination_points = [(22.491, 114.141)]
     route, route_t, t, dis = TSP_route(origin_point, destination_points)
 
     print(route)
