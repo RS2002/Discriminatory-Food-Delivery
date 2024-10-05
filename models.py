@@ -123,11 +123,12 @@ class Order_Net(nn.Module):
         return y
 
 class Attention_Score(nn.Module):
-    def __init__(self, input_dims=64,hidden_dims=64,head=2):
+    def __init__(self, input_dims=64,hidden_dims=64,head=2, dropout=0.3):
         super().__init__()
-        self.q_linear=nn.Linear(input_dims,hidden_dims)
-        self.k_linear=nn.Linear(input_dims,hidden_dims)
-        self.sigmoid=nn.Sigmoid()
+        # self.q_linear=nn.Linear(input_dims,hidden_dims)
+        # self.k_linear=nn.Linear(input_dims,hidden_dims)
+        self.q_linear = MLP([input_dims,hidden_dims,hidden_dims], dropout=dropout)
+        self.k_linear = MLP([input_dims,hidden_dims,hidden_dims], dropout=dropout)
         self.head=head
         self.num=hidden_dims//head
         self.input_dims=input_dims
@@ -146,14 +147,17 @@ class Attention_Score(nn.Module):
         return attn_matrix
 
 class Q_Net(nn.Module):
-    def __init__(self, state_size=7, history_order_size=4, current_order_size=5, hidden_dim=64, head=2, bi_direction=False, dropout=0.3):
+    def __init__(self, state_size=7, history_order_size=4, current_order_size=5, hidden_dim=64, head=1, bi_direction=False, dropout=0.3):
         super().__init__()
         self.worker_net = Worker_Net(state_size=state_size, order_size=history_order_size, output_dim=hidden_dim, bi_direction=bi_direction, dropout=dropout)
         self.order_net = Order_Net(state_size=current_order_size, output_size=hidden_dim, dropout=dropout)
-        self.attention = Attention_Score(input_dims=hidden_dim,hidden_dims=hidden_dim,head=head)
-        self.attention_price_mu = Attention_Score(input_dims=hidden_dim,hidden_dims=hidden_dim,head=head)
-        self.attention_price_sigma = Attention_Score(input_dims=hidden_dim,hidden_dims=hidden_dim,head=head)
+        self.attention = Attention_Score(input_dims=hidden_dim,hidden_dims=hidden_dim,head=head, dropout=dropout)
+        self.attention_price_mu = Attention_Score(input_dims=hidden_dim,hidden_dims=hidden_dim,head=head, dropout=dropout)
+        self.attention_price_sigma = Attention_Score(input_dims=hidden_dim,hidden_dims=hidden_dim,head=head, dropout=dropout)
         self.sigmoid = nn.Sigmoid()
+        self.tanh = nn.Tanh()
+        self.relu = nn.ReLU()
+        self.softplus = nn.Softplus()
 
 
     def forward(self,order,x_state,x_order,order_num=None):
@@ -166,9 +170,15 @@ class Q_Net(nn.Module):
         worker = self.worker_net(x_state,x_order,order_num)
         q_matrix = self.attention(worker,order)
         price_mu_matrix = self.attention_price_mu(worker,order)
-        price_mu_matrix = self.sigmoid(price_mu_matrix) * 2
+        # price_mu_matrix = price_mu_matrix ** 2
+        # price_mu_matrix = self.sigmoid(price_mu_matrix) * 2
+        price_mu_matrix = self.sigmoid(price_mu_matrix) + 0.5
+        # price_mu_matrix = self.relu(self.tanh(price_mu_matrix) + 0.5)
         price_sigma_matrix = self.attention_price_sigma(worker,order)
-        price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.1
+        # price_sigma_matrix = price_sigma_matrix ** 2 + 1e-8
+        # price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.1
+        # price_sigma_matrix = self.relu(price_sigma_matrix) + 1e-8
+        price_sigma_matrix = self.softplus(price_sigma_matrix)
         return q_matrix,price_mu_matrix,price_sigma_matrix
 
 class Worker_Q_Net(nn.Module):
@@ -195,6 +205,12 @@ class Worker_Q_Net(nn.Module):
         y = self.worker_net(x,x_order,order_num) # [reject_prob,accept_prob]
         return y
 
+def parameter_freeze(model, prob):
+    for layer in model:
+        params = layer.parameters()
+        for p in params:
+            num = int(p.shape[0] * prob)
+            p.grad[0:num] = 0
 
 # test
 if __name__ == '__main__':

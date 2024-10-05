@@ -238,8 +238,8 @@ class Worker():
         self.zone_lookup = pd.read_csv(zone_table_path)
         self.coordinate_lookup = np.array(self.zone_lookup[['lat','lon']])
 
-        self.Q_training = Q_Net(state_size=7, history_order_size=4, current_order_size=5, hidden_dim=64, head=2, bi_direction=False, dropout=0.3).to(device)
-        self.Q_target = Q_Net(state_size=7, history_order_size=4, current_order_size=5, hidden_dim=64, head=2, bi_direction=False, dropout=0.3).to(device)
+        self.Q_training = Q_Net(state_size=7, history_order_size=4, current_order_size=5, hidden_dim=64, head=1, bi_direction=False, dropout=0.3).to(device)
+        self.Q_target = Q_Net(state_size=7, history_order_size=4, current_order_size=5, hidden_dim=64, head=1, bi_direction=False, dropout=0.3).to(device)
         # if model_path is not None:
         #     self.Q_target.load_state_dict(torch.load(model_path))
         #     self.Q_training.load_state_dict(torch.load(model_path))
@@ -269,7 +269,7 @@ class Worker():
         print('Worker total parameters:', sum(p.numel() for p in self.Worker_Q_training.parameters() if p.requires_grad))
 
         self.optim = torch.optim.Adam(self.Q_training.parameters(), lr=lr)
-        self.optim_worker = torch.optim.Adam(self.Worker_Q_training.parameters(), lr=lr)
+        self.optim_worker = torch.optim.Adam(self.Worker_Q_training.parameters(), lr=lr*0.05)
         self.loss_func = nn.MSELoss()
 
         # self.reset(max_step,num,reservation_value, speed, capacity, group)
@@ -586,9 +586,9 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
     if feedback is not None:
         worker_reward=worker_feed_back[1]
         if feedback[-1] == -1: # -1 means reject
-            negative_history = negative_history * update_rate + feedback[1][0] * (1-update_rate)
+            negative_history = negative_history * (1-update_rate) + feedback[1][0] * update_rate
         else: # accept order
-            positive_history = positive_history * update_rate + feedback[1][0] * (1-update_rate)
+            positive_history = positive_history * (1-update_rate) + feedback[1][0] * update_rate
 
         # update experience
         if len(experience) > 0:

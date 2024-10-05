@@ -24,6 +24,8 @@ class Platform():
         self.workload = []
         # self.detour_time = [] # work_time - direct_time
         self.valid_distance = []
+        self.price_sigma_pos = []
+        self.price_sigma_neg = []
 
 
     def assign(self,q_matrix):
@@ -89,9 +91,14 @@ class Platform():
             worker_feed_back_table.append(result[7])
 
             if result[8] is not None:
-                self.direct_time.append(result[8][0])
-                self.workload.append(result[8][1])
-                self.valid_distance.append(result[8][2])
+                if len(result[8])>1:
+                    self.direct_time.append(result[8][0])
+                    self.workload.append(result[8][1])
+                    self.valid_distance.append(result[8][2])
+                    self.price_sigma_pos.append(result[8][3])
+                else:
+                    self.price_sigma_neg.append(result[8][0])
+
 
         return feedback_table, new_route_table ,new_route_time_table ,new_remaining_time_table ,new_total_travel_time_table, accepted_orders, worker_feed_back_table
 
@@ -103,13 +110,14 @@ beta_list[2]: punishment of paying salary
 beta_list[3]: punishment of timeout orders
 beta_list[4]: punishment of added time
 beta_list[5]: add punishment to the over time
+beta_list[6]: add punishment to unit price directly
 '''
 def reward_func_generator(beta_list, threshold):
-    def reward(time_add,time_out,salary,direct_distance):
+    def reward(time_add,time_out,salary,direct_distance,unit_price):
         if time_add <= threshold:
-            r = beta_list[0] + beta_list[1] * direct_distance / 1000  - beta_list[2] * salary / 100 - beta_list[3] * time_out - beta_list[4] * time_add / 60
+            r = beta_list[0] + beta_list[1] * direct_distance / 1000  - beta_list[2] * salary / 100 - beta_list[3] * time_out - beta_list[4] * time_add / 60 - beta_list[6] * unit_price
         else:
-            r = beta_list[0] + beta_list[1] * direct_distance / 1000  - beta_list[2] * salary / 100 - beta_list[3] * time_out - beta_list[4] * time_add / 60 - beta_list[5] * (time_add - threshold)
+            r = beta_list[0] + beta_list[1] * direct_distance / 1000  - beta_list[2] * salary / 100 - beta_list[3] * time_out - beta_list[4] * time_add / 60 - beta_list[6] * unit_price - beta_list[5] * (time_add - threshold)
         return r
     return reward
 
@@ -204,13 +212,13 @@ def excute(observe, reservation_value, speed, current_order, current_order_num, 
 
 
                 salary = work_add * price
-                reward = reward_func(time_add / speed, timeout, salary, direct_distance)
+                reward = reward_func(time_add / speed, timeout, salary, direct_distance, price)
                 feedback = [[observe,current_order,current_order_num,new_orders_state[assignment], current_time], [price,price_log_prop,work_add,salary], reward, pickup_time[0]]
 
                 worker_reward = work_add * (price-reservation_value)
                 worker_feedback = [1,worker_reward,price]
 
-                log = [direct_time, work_add, direct_distance]
+                log = [direct_time, work_add, direct_distance, price_sigma]
 
                 return feedback, new_route, new_route_time, new_time, new_total_travel_time, timeout, accept_order, worker_feedback, log
             else: # routing failure --> decline the assignment
@@ -221,6 +229,6 @@ def excute(observe, reservation_value, speed, current_order, current_order_num, 
                         [price, price_log_prop], reward, -1]
 
             worker_feedback = [0,-worker_reject_punishment,price]
-            return feedback, None, None, None, None, 0, None, worker_feedback, None
+            return feedback, None, None, None, None, 0, None, worker_feedback, [price_sigma]
     else:
         return None, None, None, None, None, 0, None, None, None

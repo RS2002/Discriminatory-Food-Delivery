@@ -24,9 +24,9 @@ def get_args():
     parser.add_argument('--demand_sample_rate', type=float, default=0.95)
     parser.add_argument('--order_max_wait_time', type=float, default=5.0)
     parser.add_argument('--order_threshold', type=float, default=40.0)
-    parser.add_argument('--reward_parameter', type=float, nargs='+', default=[2.0,5.0,4.0,3.0,1.0,5.0]) #ori: 10.0,5.0,3.0,2.0,1.0,4.0
+    parser.add_argument('--reward_parameter', type=float, nargs='+', default=[4.0,5.0,4.0,3.0,1.0,5.0,5.0]) #ori: 10.0,5.0,3.0,2.0,1.0,4.0
     parser.add_argument('--reject_punishment', type=float, default=0.0)
-    parser.add_argument('--worker_reject_punishment', type=float, default=0.5)
+    parser.add_argument('--worker_reject_punishment', type=float, default=3.0)
 
     parser.add_argument('--epsilon', type=float, default=1.0)
     parser.add_argument('--epsilon_decay_rate', type=float, default=0.99)
@@ -124,7 +124,7 @@ def main():
             feedback_table, new_route_table, new_route_time_table, new_remaining_time_table, new_total_travel_time_table, accepted_orders, worker_feed_back_table = platform.feedback(
                 worker.observe_space, worker.reservation_value, worker.speed, worker.current_orders, worker.current_order_num,
                 assignment, order_state, price_mu, price_sigma, reward_func, args.reject_punishment, args.order_threshold, t,
-                worker.Worker_Q_training, exploration_rate * 0.5, args.worker_reject_punishment, device, worker_state
+                worker.Worker_Q_training, exploration_rate, args.worker_reject_punishment, device, worker_state
             )
             worker.update(feedback_table, new_route_table, new_route_time_table, new_remaining_time_table, new_total_travel_time_table, worker_feed_back_table, t, (t==args.max_step-1))
             demand.pickup(accepted_orders)
@@ -149,6 +149,10 @@ def main():
         with open("train.txt", 'a') as file:
             file.write(log+"\n")
         worker.save("platform_latest.pth", "worker_latest.pth")
+
+        price_sigma_pos = np.mean(platform.price_sigma_pos)
+        price_sigma_neg = np.mean(platform.price_sigma_neg)
+        print("Price Distribution Std: Pos {:} , Neg {:}".format(price_sigma_pos,price_sigma_neg))
 
         if j % args.eval_episode == 0:
             reservation_value, speed, capacity, group = group_generation_func2(args.worker_num)
@@ -190,6 +194,10 @@ def main():
             with open("eval.txt", 'a') as file:
                 file.write(log + "\n")
 
+            price_sigma_pos = np.mean(platform.price_sigma_pos)
+            price_sigma_neg = np.mean(platform.price_sigma_neg)
+            print("Price Distribution Std: Pos {:} , Neg {:}".format(price_sigma_pos, price_sigma_neg))
+
             dic = {
                 'episode': j,
                 'reservation_value': reservation_value,
@@ -199,7 +207,9 @@ def main():
                 'assigned_order': worker.worker_assign_order,
                 'salary': worker.salary,
                 'pos_history': worker.positive_history,
-                'neg_history': worker.negative_history
+                'neg_history': worker.negative_history,
+                'price_sigma_pos': platform.price_sigma_pos,
+                'price_sigma_neg': platform.price_sigma_neg
             }
             # with open('log.pkl', 'wb') as f:
             #     pickle.dump(dic, f)
