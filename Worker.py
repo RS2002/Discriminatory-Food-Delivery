@@ -486,12 +486,14 @@ class Worker():
 
             x1, x2, x3 = norm(new_order_state,worker_state,order_state)
             current_state_value, price_mu, price_sigma = self.Q_training(x1,x2,x3,order_num)
+            current_state_value, price_mu, price_sigma = torch.diag(current_state_value),torch.diag(price_mu),torch.diag(price_sigma)
             current_worker_q_value = self.Worker_Q_training(torch.concat([x1,x2,reservation_value.unsqueeze(-1),price_old.unsqueeze(-1)],dim=-1), x3, order_num)
             current_worker_q_value = current_worker_q_value[torch.arange(current_worker_q_value.size(0)),worker_action]
 
             x1, x2, x3 = norm(new_order_state_next, worker_state_next, order_state_next)
             next_state_value, _, _ = self.Q_target(x1, x2, x3, order_num_next)
             # next_state_value, _, _ = self.Q_training(x1, x2, x3, order_num_next)
+            next_state_value = torch.diag(next_state_value)
 
             td_target = reward + self.gamma ** delta_t * next_state_value.detach()
             td_target = td_target.float()
@@ -540,11 +542,13 @@ class Worker():
                 order_num_next).detach(), dim=-1)[1]
             next_worker_q_value = next_worker_q_value[torch.arange(next_worker_q_value.size(0)), next_worker_q_value_index]
 
-            # Important Notice: Worker Punishment Must be 0
-            workload = worker_reward / price_old
-            new_price = normal_dist.sample()
-            worker_reward = workload * new_price
-            worker_reward = worker_reward.detach()
+            # # Worker Environment Adaption
+            # # Important Notice: Worker Punishment Must be 0
+            # workload = worker_reward / price_old
+            # new_price = normal_dist.sample()
+            # worker_reward = workload * new_price
+            # worker_reward = worker_reward.detach()
+            rate = 1.0
 
             worker_target = worker_reward + self.gamma ** delta_t * next_worker_q_value * rate
             worker_target = worker_target.float()
