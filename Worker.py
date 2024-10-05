@@ -492,15 +492,6 @@ class Worker():
             x1, x2, x3 = norm(new_order_state_next, worker_state_next, order_state_next)
             next_state_value, _, _ = self.Q_target(x1, x2, x3, order_num_next)
             # next_state_value, _, _ = self.Q_training(x1, x2, x3, order_num_next)
-            next_worker_q_value = self.Worker_Q_target(torch.concat([x1, x2, reservation_value.unsqueeze(-1), price_next.unsqueeze(-1)], dim=-1), x3, order_num_next)
-
-            # next_worker_q_value = torch.max(next_worker_q_value.detach(),dim=-1)[0]
-            next_worker_q_value_index = torch.max(self.Worker_Q_training(torch.concat([x1, x2, reservation_value.unsqueeze(-1), price_next.unsqueeze(-1)], dim=-1), x3, order_num_next).detach(),dim=-1)[1]
-            next_worker_q_value = next_worker_q_value[torch.arange(next_worker_q_value.size(0)), next_worker_q_value_index]
-
-
-            worker_target = worker_reward + self.gamma ** delta_t * next_worker_q_value * rate
-            worker_target = worker_target.float()
 
             td_target = reward + self.gamma ** delta_t * next_state_value.detach()
             td_target = td_target.float()
@@ -536,7 +527,28 @@ class Worker():
             c_loss.append(critic_loss.item())
             a_loss.append(actor_loss.item())
 
+
+
             # train worker_net
+            next_worker_q_value = self.Worker_Q_target(
+                torch.concat([x1, x2, reservation_value.unsqueeze(-1), price_next.unsqueeze(-1)], dim=-1), x3,
+                order_num_next)
+
+            # next_worker_q_value = torch.max(next_worker_q_value.detach(),dim=-1)[0]
+            next_worker_q_value_index = torch.max(self.Worker_Q_training(
+                torch.concat([x1, x2, reservation_value.unsqueeze(-1), price_next.unsqueeze(-1)], dim=-1), x3,
+                order_num_next).detach(), dim=-1)[1]
+            next_worker_q_value = next_worker_q_value[torch.arange(next_worker_q_value.size(0)), next_worker_q_value_index]
+
+            # Important Notice: Worker Punishment Must be 0
+            workload = worker_reward / price_old
+            new_price = normal_dist.sample()
+            worker_reward = workload * new_price
+            worker_reward = worker_reward.detach()
+
+            worker_target = worker_reward + self.gamma ** delta_t * next_worker_q_value * rate
+            worker_target = worker_target.float()
+
             loss = self.loss_func(current_worker_q_value, worker_target)
             self.optim_worker.zero_grad()
             loss.backward()
