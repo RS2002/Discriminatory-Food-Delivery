@@ -26,6 +26,8 @@ class Platform():
         self.valid_distance = []
         self.price_sigma_pos = []
         self.price_sigma_neg = []
+        self.price_pos = []
+        self.price_neg = []
 
 
     def assign(self,q_matrix):
@@ -96,8 +98,10 @@ class Platform():
                     self.workload.append(result[8][1])
                     self.valid_distance.append(result[8][2])
                     self.price_sigma_pos.append(result[8][3])
+                    self.price_pos.append(result[0][1][0])
                 else:
                     self.price_sigma_neg.append(result[8][0])
+                    self.price_neg.append(result[0][1][0])
 
 
         return feedback_table, new_route_table ,new_route_time_table ,new_remaining_time_table ,new_total_travel_time_table, accepted_orders, worker_feed_back_table

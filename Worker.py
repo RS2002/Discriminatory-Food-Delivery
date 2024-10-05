@@ -372,8 +372,9 @@ class Worker():
         self.price = [[] for _ in range(self.num)]
         self.salary = [0.0]*self.num
         self.work_load = [0.0]*self.num
-        self.worker_assign_order = [0.0]*self.num
-        self.worker_reject_order = [0.0]*self.num
+        self.worker_assign_order = [0]*self.num
+        self.worker_reject_order = [0]*self.num
+
 
 
     def observe(self, order, current_time, exploration_rate=0):
@@ -458,14 +459,13 @@ class Worker():
                 self.Worker_Q_training.load_state_dict(torch.load(path2))
                 self.Worker_Q_target.load_state_dict(torch.load(path2))
 
-
     def update_Qtarget(self,tau=0.005):
         for target_param, train_param in zip(self.Q_target.parameters(), self.Q_training.parameters()):
             target_param.data.copy_(tau * train_param.data + (1.0 - tau) * target_param.data)
         for target_param, train_param in zip(self.Worker_Q_target.parameters(), self.Worker_Q_training.parameters()):
             target_param.data.copy_(tau * train_param.data + (1.0 - tau) * target_param.data)
 
-    def train(self,batch_size=512,train_times=10):
+    def train(self,batch_size=512,train_times=10,rate=1.0):
         c_loss=[]
         a_loss=[]
 
@@ -499,7 +499,7 @@ class Worker():
             next_worker_q_value = next_worker_q_value[torch.arange(next_worker_q_value.size(0)), next_worker_q_value_index]
 
 
-            worker_target = worker_reward + self.gamma** delta_t * next_worker_q_value
+            worker_target = worker_reward + self.gamma ** delta_t * next_worker_q_value * rate
             worker_target = worker_target.float()
 
             td_target = reward + self.gamma ** delta_t * next_state_value.detach()

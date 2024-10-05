@@ -106,6 +106,9 @@ def main():
     j = args.init_episode
     exploration_rate = max(exploration_rate * (epsilon_decay_rate**j), epsilon_final)
 
+    last_price_avg = 1.0
+    rate = 1.0
+
     while True:
         j += 1
 
@@ -130,7 +133,13 @@ def main():
             demand.pickup(accepted_orders)
             demand.update()
 
-        c_loss, a_loss, w_loss = worker.train(args.batch_size, args.train_times)
+        price_pos = np.mean(platform.price_pos)
+        price_neg = np.mean(platform.price_neg)
+        if j != 1:
+            rate = price_pos / last_price_avg
+        last_price_avg = price_pos
+
+        c_loss, a_loss, w_loss = worker.train(args.batch_size, args.train_times, rate=rate)
 
         total_pickup = platform.PickUp
         total_reward = platform.Total_Reward / args.worker_num
@@ -153,6 +162,7 @@ def main():
         price_sigma_pos = np.mean(platform.price_sigma_pos)
         price_sigma_neg = np.mean(platform.price_sigma_neg)
         print("Price Distribution Std: Pos {:} , Neg {:}".format(price_sigma_pos,price_sigma_neg))
+        print("Real Price Avg: Pos {:} , Neg {:}".format(price_pos,price_neg))
 
         if j % args.eval_episode == 0:
             reservation_value, speed, capacity, group = group_generation_func2(args.worker_num)
@@ -197,6 +207,9 @@ def main():
             price_sigma_pos = np.mean(platform.price_sigma_pos)
             price_sigma_neg = np.mean(platform.price_sigma_neg)
             print("Price Distribution Std: Pos {:} , Neg {:}".format(price_sigma_pos, price_sigma_neg))
+            price_pos = np.mean(platform.price_pos)
+            price_neg = np.mean(platform.price_neg)
+            print("Real Price Avg: Pos {:} , Neg {:}".format(price_pos, price_neg))
 
             dic = {
                 'episode': j,
@@ -205,6 +218,7 @@ def main():
                 'price': worker.price,
                 'work_load': worker.work_load,
                 'assigned_order': worker.worker_assign_order,
+                'reject_order': worker.worker_reject_order,
                 'salary': worker.salary,
                 'pos_history': worker.positive_history,
                 'neg_history': worker.negative_history,
