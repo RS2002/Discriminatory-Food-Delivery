@@ -24,9 +24,9 @@ def get_args():
     parser.add_argument('--demand_sample_rate', type=float, default=0.95)
     parser.add_argument('--order_max_wait_time', type=float, default=5.0)
     parser.add_argument('--order_threshold', type=float, default=40.0)
-    parser.add_argument('--reward_parameter', type=float, nargs='+', default=[4.0,5.0,4.0,3.0,1.0,5.0,5.0]) #ori: 10.0,5.0,3.0,2.0,1.0,4.0
+    parser.add_argument('--reward_parameter', type=float, nargs='+', default=[4.0,5.0,4.0,3.0,1.0,5.0,1.0]) #ori: 10.0,5.0,3.0,2.0,1.0,4.0
     parser.add_argument('--reject_punishment', type=float, default=0.0)
-    parser.add_argument('--worker_reject_punishment', type=float, default=3.0)
+    parser.add_argument('--worker_reject_punishment', type=float, default=0.0)
 
     parser.add_argument('--epsilon', type=float, default=1.0)
     parser.add_argument('--epsilon_decay_rate', type=float, default=0.99)

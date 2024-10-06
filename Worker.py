@@ -498,6 +498,8 @@ class Worker():
             td_target = reward + self.gamma ** delta_t * next_state_value.detach()
             td_target = td_target.float()
 
+            # print(current_state_value.shape)
+            # print(td_target.shape)
             critic_loss = self.loss_func(current_state_value, td_target)
 
             normal_dist = torch.distributions.Normal(price_mu, price_sigma)
@@ -528,7 +530,6 @@ class Worker():
             self.optim.step()
             c_loss.append(critic_loss.item())
             a_loss.append(actor_loss.item())
-
 
 
             # train worker_net
