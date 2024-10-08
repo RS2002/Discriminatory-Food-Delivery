@@ -4,8 +4,8 @@ from joblib import Parallel, delayed
 from scipy.optimize import linear_sum_assignment
 import numpy as np
 import random
-# from Worker import accept_rate, norm
-from Worker import norm
+from Worker import accept_rate, norm
+
 
 class Platform():
     def __init__(self,discount_factor=0.99, njobs=24):
@@ -26,6 +26,8 @@ class Platform():
         self.valid_distance = []
         self.price_sigma_pos = []
         self.price_sigma_neg = []
+        self.price_mu_pos = []
+        self.price_mu_neg = []
         self.price_pos = []
         self.price_neg = []
 
@@ -93,14 +95,16 @@ class Platform():
             worker_feed_back_table.append(result[7])
 
             if result[8] is not None:
-                if len(result[8])>1:
+                if len(result[8])>2:
                     self.direct_time.append(result[8][0])
                     self.workload.append(result[8][1])
                     self.valid_distance.append(result[8][2])
                     self.price_sigma_pos.append(result[8][3])
+                    self.price_mu_pos.append(result[8][4])
                     self.price_pos.append(result[0][1][0])
                 else:
                     self.price_sigma_neg.append(result[8][0])
+                    self.price_mu_neg.append(result[8][1])
                     self.price_neg.append(result[0][1][0])
 
 
@@ -152,36 +156,50 @@ def excute(observe, reservation_value, speed, current_order, current_order_num, 
         price_mu, price_sigma = price_mu_vector[assignment], price_sigma_vector[assignment]
         price_dist = torch.distributions.Normal(price_mu, price_sigma)
         price = price_dist.sample()
+        if price<0:
+            # price=price-price+1e-8
+            price = price - price
         price_log_prop = price_dist.log_prob(price)
         price, price_log_prop = price.item(), price_log_prop.item() # avoid gradient propagation
 
-        rand = random.random()
-        if rand<exploration_rate:
-            acc_rate = 0.5
+        if worker_Q_Net is not None: # intelligent worker
+            rand = random.random()
+            if rand<exploration_rate:
+                acc_rate = 0.5
+            else:
+                # worker_Q_Net.eval()
+                torch.set_grad_enabled(False)
+                order_norm, x_norm, x_order_norm = norm(np.expand_dims(new_orders_state[assignment], axis=0),
+                                                        np.expand_dims(worker_state, axis=0),
+                                                        np.expand_dims(current_order, axis=0))
+                x = np.concatenate([order_norm, x_norm, np.array([[reservation_value, price]])], axis=-1)
+                x = torch.from_numpy(x).to(device)
+                x_order_norm = torch.from_numpy(x_order_norm).to(device)
+                worker_q_value = worker_Q_Net(x, x_order_norm, torch.tensor([current_order_num]).to(device))
+                acc_rate = int(worker_q_value[0, 1]>=worker_q_value[0, 0])
+
+            # worker_Q_Net.eval() # no ε-greedy to avoid platform network cannot converge
+            # torch.set_grad_enabled(False)
+            # order_norm, x_norm, x_order_norm = norm(np.expand_dims(new_orders_state[assignment], axis=0), np.expand_dims(worker_state, axis=0), np.expand_dims(current_order, axis=0))
+            # x = np.concatenate([order_norm, x_norm, np.array([[reservation_value, price]])], axis=-1)
+            # x = torch.from_numpy(x).to(device)
+            # x_order_norm = torch.from_numpy(x_order_norm).to(device)
+            # worker_q_value = worker_Q_Net(x, x_order_norm, torch.tensor([current_order_num]).to(device))
+            # acc_rate = worker_q_value[0,1]
+
+            rand = random.random()
+            flag = (rand<=acc_rate)
         else:
-            # worker_Q_Net.eval()
-            torch.set_grad_enabled(False)
-            order_norm, x_norm, x_order_norm = norm(np.expand_dims(new_orders_state[assignment], axis=0),
-                                                    np.expand_dims(worker_state, axis=0),
-                                                    np.expand_dims(current_order, axis=0))
-            x = np.concatenate([order_norm, x_norm, np.array([[reservation_value, price]])], axis=-1)
-            x = torch.from_numpy(x).to(device)
-            x_order_norm = torch.from_numpy(x_order_norm).to(device)
-            worker_q_value = worker_Q_Net(x, x_order_norm, torch.tensor([current_order_num]).to(device))
-            acc_rate = int(worker_q_value[0, 1]>=worker_q_value[0, 0])
+            # print(price,reservation_value,price<reservation_value)
+            if price<reservation_value:
+                flag = False
+            else:
+                flag = True
+            # acc_rate = accept_rate(price,reservation_value)
+            # rand = random.random()
+            # flag = (rand<=acc_rate)
 
-        # worker_Q_Net.eval() # no ε-greedy to avoid platform network cannot converge
-        # torch.set_grad_enabled(False)
-        # order_norm, x_norm, x_order_norm = norm(np.expand_dims(new_orders_state[assignment], axis=0), np.expand_dims(worker_state, axis=0), np.expand_dims(current_order, axis=0))
-        # x = np.concatenate([order_norm, x_norm, np.array([[reservation_value, price]])], axis=-1)
-        # x = torch.from_numpy(x).to(device)
-        # x_order_norm = torch.from_numpy(x_order_norm).to(device)
-        # worker_q_value = worker_Q_Net(x, x_order_norm, torch.tensor([current_order_num]).to(device))
-        # acc_rate = worker_q_value[0,1]
-
-        # acc_rate = accept_rate(price,reservation_value)
-        rand = random.random()
-        if rand<=acc_rate: #accept
+        if flag: #accept
             accept_order = assignment
             # 1. direct_distance
             plat, plon, dlat, dlon = new_orders_state[assignment,:4]
@@ -220,19 +238,23 @@ def excute(observe, reservation_value, speed, current_order, current_order_num, 
                 feedback = [[observe,current_order,current_order_num,new_orders_state[assignment], current_time], [price,price_log_prop,work_add,salary], reward, pickup_time[0]]
 
                 worker_reward = work_add * (price-reservation_value)
-                worker_feedback = [1,worker_reward,price]
+                worker_feedback = [1,worker_reward,price,work_add]
 
-                log = [direct_time, work_add, direct_distance, price_sigma]
+                log = [direct_time, work_add, direct_distance, price_sigma, price_mu]
 
                 return feedback, new_route, new_route_time, new_time, new_total_travel_time, timeout, accept_order, worker_feedback, log
             else: # routing failure --> decline the assignment
                 return None, None, None, None, None, 0, None, None, None
         else: #reject
-            reward = - punish_rate / price # to help model increase the price
+            # reward = - punish_rate / price # to help model increase the price
+            reward = - punish_rate
             feedback = [[observe, current_order, current_order_num, new_orders_state[assignment], current_time],
                         [price, price_log_prop], reward, -1]
 
-            worker_feedback = [0,-worker_reject_punishment,price]
-            return feedback, None, None, None, None, 0, None, worker_feedback, [price_sigma]
+
+            # worker_reward = -worker_reject_punishment
+            worker_reward = -worker_reject_punishment*price/reservation_value
+            worker_feedback = [0, worker_reward, price, 0]
+            return feedback, None, None, None, None, 0, None, worker_feedback, [price_sigma, price_mu]
     else:
         return None, None, None, None, None, 0, None, None, None

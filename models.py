@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 class MLP(nn.Module):
-    def __init__(self, layer_sizes=[64,64,64,1], arl=False, dropout=0.3):
+    def __init__(self, layer_sizes=[64,64,64,1], arl=False, dropout=0.0):
         super().__init__()
         self.arl = arl
         self.attention = nn.Sequential(
@@ -30,7 +30,7 @@ class MLP(nn.Module):
         return x
 
 class LSTM(nn.Module):
-    def __init__(self,input_size, output_size, hidden_size=64, dropout=0.3):
+    def __init__(self,input_size, output_size, hidden_size=64, dropout=0.0):
         super().__init__()
         self.lstm = nn.LSTM(input_size, hidden_size, batch_first=True, bidirectional=False, dropout=dropout)
         # self.fc = nn.Sequential(
@@ -52,7 +52,7 @@ class LSTM(nn.Module):
         return x
 
 class BiLSTM(nn.Module):
-    def __init__(self,input_size, output_size, hidden_size=64, dropout=0.3):
+    def __init__(self,input_size, output_size, hidden_size=64, dropout=0.0):
         super().__init__()
         self.lstm1 = nn.LSTM(input_size, hidden_size // 2, batch_first=True, bidirectional=False, dropout=dropout)
         self.lstm2 = nn.LSTM(input_size, hidden_size // 2, batch_first=True, bidirectional=False, dropout=dropout)
@@ -90,7 +90,7 @@ class BiLSTM(nn.Module):
         return x
 
 class Worker_Net(nn.Module):
-    def __init__(self, state_size=7, order_size=4, output_dim=32, bi_direction=False, dropout=0.3):
+    def __init__(self, state_size=7, order_size=4, output_dim=32, bi_direction=False, dropout=0.0):
         super().__init__()
         if bi_direction:
             self.lstm = BiLSTM(order_size,32, dropout=dropout)
@@ -114,7 +114,7 @@ class Worker_Net(nn.Module):
         return y
 
 class Order_Net(nn.Module):
-    def __init__(self, state_size=5, output_size=32, dropout=0.3):
+    def __init__(self, state_size=5, output_size=32, dropout=0.0):
         super().__init__()
         self.model = MLP([state_size,16,32,output_size], arl=True, dropout=dropout)
 
@@ -123,7 +123,7 @@ class Order_Net(nn.Module):
         return y
 
 class Attention_Score(nn.Module):
-    def __init__(self, input_dims=64,hidden_dims=64,head=2, dropout=0.3):
+    def __init__(self, input_dims=64,hidden_dims=64,head=2, dropout=0.0):
         super().__init__()
         # self.q_linear=nn.Linear(input_dims,hidden_dims)
         # self.k_linear=nn.Linear(input_dims,hidden_dims)
@@ -147,7 +147,7 @@ class Attention_Score(nn.Module):
         return attn_matrix
 
 class Q_Net(nn.Module):
-    def __init__(self, state_size=7, history_order_size=4, current_order_size=5, hidden_dim=64, head=1, bi_direction=False, dropout=0.3):
+    def __init__(self, state_size=7, history_order_size=4, current_order_size=5, hidden_dim=64, head=1, bi_direction=False, dropout=0.0):
         super().__init__()
         self.worker_net = Worker_Net(state_size=state_size, order_size=history_order_size, output_dim=hidden_dim, bi_direction=bi_direction, dropout=dropout)
         self.order_net = Order_Net(state_size=current_order_size, output_size=hidden_dim, dropout=dropout)
@@ -169,20 +169,28 @@ class Q_Net(nn.Module):
         order = self.order_net(order)
         worker = self.worker_net(x_state,x_order,order_num)
         q_matrix = self.attention(worker,order)
+
         price_mu_matrix = self.attention_price_mu(worker,order)
         # price_mu_matrix = price_mu_matrix ** 2
-        # price_mu_matrix = self.sigmoid(price_mu_matrix) * 2
-        price_mu_matrix = self.sigmoid(price_mu_matrix) + 0.5
+        price_mu_matrix = self.sigmoid(price_mu_matrix) * 2
+        # price_mu_matrix = self.sigmoid(price_mu_matrix) + 0.5
         # price_mu_matrix = self.relu(self.tanh(price_mu_matrix) + 0.5)
+        # price_mu_matrix = self.tanh(price_mu_matrix)
+        # price_mu_matrix = self.relu(price_mu_matrix)
+
+
         price_sigma_matrix = self.attention_price_sigma(worker,order)
         # price_sigma_matrix = price_sigma_matrix ** 2 + 1e-8
         # price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.1
         # price_sigma_matrix = self.relu(price_sigma_matrix) + 1e-8
         price_sigma_matrix = self.softplus(price_sigma_matrix)
+        # price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.5
+        # price_sigma_matrix = self.softplus(price_sigma_matrix) * 0.5
+
         return q_matrix,price_mu_matrix,price_sigma_matrix
 
 class Worker_Q_Net(nn.Module):
-    def __init__(self, input_size=14, history_order_size=4, output_dim=2, bi_direction=False, dropout=0.3): # (7+1)+(5+1)=14
+    def __init__(self, input_size=14, history_order_size=4, output_dim=2, bi_direction=False, dropout=0.0): # (7+1)+(5+1)=14
         super().__init__()
         self.worker_net = Worker_Net(state_size=input_size, order_size=history_order_size, output_dim=output_dim, bi_direction=bi_direction, dropout=dropout)
 

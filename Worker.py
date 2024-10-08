@@ -7,6 +7,8 @@ from joblib import Parallel, delayed
 import torch.nn as nn
 import tqdm
 import warnings
+
+
 # ignore FutureWarning
 warnings.simplefilter(action='ignore', category=FutureWarning)
 INF = 1e8
@@ -118,6 +120,11 @@ class Buffer():
         self.worker_action = []
         self.worker_reward = []
         self.price_next = [] # worker extra state (next)
+        self.workload_current = []
+        self.workload_next = []
+
+        self.episode = []
+        self.id = []
 
     '''
     input: record = [state, worker_current, action, reward, delta_t, next_state, worker_next]
@@ -130,7 +137,7 @@ class Buffer():
     next_state (same structure as "state") 
     worker_next (same structure as "worker_current") 
     '''
-    def append(self,record):
+    def append(self,record, worker_id, episode=1):
         state, worker_current, action, reward, delta_t, next_state, worker_next = record
 
         speed, capacity, positive, negative = state[1],state[2],state[3],state[4]
@@ -156,6 +163,10 @@ class Buffer():
             self.worker_action = self.worker_action[1:]
             self.worker_reward = self.worker_reward[1:]
             self.price_next = self.price_next[1:]
+            self.workload_current = self.workload_current[1:]
+            self.workload_next =  self.workload_next[1:]
+            self.episode = self.episode[1:]
+            self.id = self.id[1:]
         else:
             self.num+=1
 
@@ -178,7 +189,12 @@ class Buffer():
         self.reservation_value.append(worker_current[1])
         self.worker_action.append(worker_current[0][0])
         self.worker_reward.append(worker_current[0][1])
-        self.price_next.append(worker_next[0][1])
+        self.price_next.append(worker_next[0][2])
+        self.workload_current.append(worker_current[0][3])
+        self.workload_next.append(worker_next[0][3])
+
+        self.episode.append(episode)
+        self.id.append(worker_id)
 
     '''
     random sample <size> samples
@@ -190,7 +206,11 @@ class Buffer():
     line4: worker extra state/action/reward/state_next
     '''
     def sampling(self,size,device):
-        indices = np.random.randint(0, self.num, size=size)
+        # indices = np.random.randint(0, self.num, size=size)
+        priority = np.array(self.episode)
+        priority = priority - np.min(priority) + 1
+        probabilities = np.array(priority) / np.sum(priority)
+        indices = np.random.choice(self.num, size, p=probabilities)
 
         worker_state = torch.tensor([self.worker_state[i] for i in indices]).to(device)
         order_state = torch.tensor([self.order_state[i] for i in indices]).to(device)
@@ -209,13 +229,45 @@ class Buffer():
         worker_action = torch.tensor([self.worker_action[i] for i in indices]).to(device)
         worker_reward = torch.tensor([self.worker_reward[i] for i in indices]).to(device)
         price_next = torch.tensor([self.price_next[i] for i in indices]).to(device)
+        workload_current = torch.tensor([self.workload_current[i] for i in indices]).to(device)
+        workload_next = torch.tensor([self.workload_next[i] for i in indices]).to(device)
+
 
         return worker_state,order_state,order_num,new_order_state,\
             price, price_log_prob, reward, delta_t, \
             worker_state_next, order_state_next, order_num_next, new_order_state_next, \
-            reservation_value, price_next, worker_action, worker_reward
+            reservation_value, price_next, worker_action, worker_reward, workload_current, workload_next
 
+    def sample_episode(self, current_episode, device):
+        indices = np.where(np.array(self.episode) == current_episode)[0]
+        indices = np.sort(indices)
 
+        worker_state = torch.tensor([self.worker_state[i] for i in indices]).to(device)
+        order_state = torch.tensor([self.order_state[i] for i in indices]).to(device)
+        order_num = torch.tensor([self.order_num[i] for i in indices]).to(device)
+        new_order_state = torch.tensor([self.new_order_state[i] for i in indices]).to(device)
+        price = torch.tensor([self.price[i] for i in indices]).to(device)
+        price_log_prob = torch.tensor([self.price_log_prob[i] for i in indices]).to(device)
+        reward = torch.tensor([self.reward[i] for i in indices]).to(device)
+        delta_t = torch.tensor([self.delta_t[i] for i in indices]).to(device)
+        worker_state_next = torch.tensor([self.worker_state_next[i] for i in indices]).to(device)
+        order_state_next = torch.tensor([self.order_state_next[i] for i in indices]).to(device)
+        order_num_next = torch.tensor([self.order_num_next[i] for i in indices]).to(device)
+        new_order_state_next = torch.tensor([self.new_order_state_next[i] for i in indices]).to(device)
+
+        reservation_value = torch.tensor([self.reservation_value[i] for i in indices]).to(device)
+        worker_action = torch.tensor([self.worker_action[i] for i in indices]).to(device)
+        worker_reward = torch.tensor([self.worker_reward[i] for i in indices]).to(device)
+        price_next = torch.tensor([self.price_next[i] for i in indices]).to(device)
+        workload_current = torch.tensor([self.workload_current[i] for i in indices]).to(device)
+        workload_next = torch.tensor([self.workload_next[i] for i in indices]).to(device)
+
+        id = torch.tensor([self.id[i] for i in indices]).to(device)
+
+        return worker_state,order_state,order_num,new_order_state,\
+            price, price_log_prob, reward, delta_t, \
+            worker_state_next, order_state_next, order_num_next, new_order_state_next, \
+            reservation_value, price_next, worker_action, worker_reward, workload_current, workload_next, id
 
 '''
 num: worker number
@@ -224,11 +276,16 @@ reservation_value/speed: 1.0 as baseline
 capacity: the maximum order number of each worker
 '''
 class Worker():
-    def __init__(self, buffer, lr=0.0001, gamma=0.99, eps_clip=0.2, max_step=60, history_num=3, num=1000, reservation_value=None, speed=None, capacity=None, group=None, device=None, zone_table_path = "../data/zone_table.csv", model_path = None,  worker_model_path = None, njobs=24):
+    def __init__(self, buffer, lr=0.0001, gamma=0.99, eps_clip=0.2, max_step=60, history_num=3, num=1000, reservation_value=None, speed=None, capacity=None, group=None, device=None, zone_table_path = "./data/zone_table.csv", model_path = None,  worker_model_path = None, njobs = 24, intelligent_worker = False):
         super().__init__()
+        self.intelligent_worker = intelligent_worker
 
         self.buffer = buffer
         self.gamma = gamma
+
+        self.worker_gamma = gamma
+        # self.worker_gamma = 0.3
+
         self.eps_clip = eps_clip
         self.device = device
         self.history_num = history_num
@@ -238,8 +295,8 @@ class Worker():
         self.zone_lookup = pd.read_csv(zone_table_path)
         self.coordinate_lookup = np.array(self.zone_lookup[['lat','lon']])
 
-        self.Q_training = Q_Net(state_size=7, history_order_size=4, current_order_size=5, hidden_dim=64, head=1, bi_direction=False, dropout=0.3).to(device)
-        self.Q_target = Q_Net(state_size=7, history_order_size=4, current_order_size=5, hidden_dim=64, head=1, bi_direction=False, dropout=0.3).to(device)
+        self.Q_training = Q_Net(state_size=7, history_order_size=5, current_order_size=5, hidden_dim=64, head=1, bi_direction=False, dropout=0.0).to(device)
+        self.Q_target = Q_Net(state_size=7, history_order_size=5, current_order_size=5, hidden_dim=64, head=1, bi_direction=False, dropout=0.0).to(device)
         # if model_path is not None:
         #     self.Q_target.load_state_dict(torch.load(model_path))
         #     self.Q_training.load_state_dict(torch.load(model_path))
@@ -247,29 +304,33 @@ class Worker():
         #     self.Q_target.load_state_dict(torch.load(model_path,map_location=torch.device('cpu')))
         #     self.Q_training.load_state_dict(torch.load(model_path,map_location=torch.device('cpu')))
 
-        self.Worker_Q_training = Worker_Q_Net(input_size=14, history_order_size=4, output_dim=2, bi_direction=False, dropout=0.3).to(device)
-        self.Worker_Q_target = Worker_Q_Net(input_size=14, history_order_size=4, output_dim=2, bi_direction=False, dropout=0.3).to(device)
-        # if worker_model_path is not None:
-        #     self.Worker_Q_training.load_state_dict(torch.load(worker_model_path))
-        #     self.Worker_Q_target.load_state_dict(torch.load(worker_model_path))
-        # if worker_model_path is not None:
-        #     self.Worker_Q_training.load_state_dict(torch.load(worker_model_path,map_location=torch.device('cpu')))
-        #     self.Worker_Q_target.load_state_dict(torch.load(worker_model_path,map_location=torch.device('cpu')))
+        if self.intelligent_worker:
+            self.Worker_Q_training = Worker_Q_Net(input_size=14, history_order_size=5, output_dim=2, bi_direction=False, dropout=0.0).to(device)
+            self.Worker_Q_target = Worker_Q_Net(input_size=14, history_order_size=5, output_dim=2, bi_direction=False, dropout=0.0).to(device)
+            # if worker_model_path is not None:
+            #     self.Worker_Q_training.load_state_dict(torch.load(worker_model_path))
+            #     self.Worker_Q_target.load_state_dict(torch.load(worker_model_path))
+            # if worker_model_path is not None:
+            #     self.Worker_Q_training.load_state_dict(torch.load(worker_model_path,map_location=torch.device('cpu')))
+            #     self.Worker_Q_target.load_state_dict(torch.load(worker_model_path,map_location=torch.device('cpu')))
 
         self.load(model_path,worker_model_path,self.device)
         for param in self.Q_target.parameters():
             param.requires_grad = False
         self.Q_target.eval()
-        for param in self.Worker_Q_target.parameters():
-            param.requires_grad = False
-        self.Worker_Q_target.eval()
+        print('Platform total parameters:', sum(p.numel() for p in self.Q_training.parameters() if p.requires_grad))
+
+        if self.intelligent_worker:
+            for param in self.Worker_Q_target.parameters():
+                param.requires_grad = False
+            self.Worker_Q_target.eval()
+            print('Worker total parameters:', sum(p.numel() for p in self.Worker_Q_training.parameters() if p.requires_grad))
+            self.optim_worker = torch.optim.Adam(self.Worker_Q_training.parameters(), lr=lr*0.05)
+
         self.update_Qtarget(tau=0.0)
 
-        print('Platform total parameters:', sum(p.numel() for p in self.Q_training.parameters() if p.requires_grad))
-        print('Worker total parameters:', sum(p.numel() for p in self.Worker_Q_training.parameters() if p.requires_grad))
 
         self.optim = torch.optim.Adam(self.Q_training.parameters(), lr=lr)
-        self.optim_worker = torch.optim.Adam(self.Worker_Q_training.parameters(), lr=lr*0.05)
         self.loss_func = nn.MSELoss()
 
         # self.reset(max_step,num,reservation_value, speed, capacity, group)
@@ -278,11 +339,14 @@ class Worker():
 
     def reset(self, max_step=60, num=1000, reservation_value=None, speed=None, capacity=None, group=None, train=True):
         if train:
-            self.Worker_Q_training.train()
+            if self.intelligent_worker:
+                self.Worker_Q_training.train()
             self.Q_training.train()
         else:
-            self.Worker_Q_training.eval()
+            if self.intelligent_worker:
+                self.Worker_Q_training.eval()
             self.Q_training.eval()
+        self.is_train = train
 
         self.max_step = max_step
         self.num = num
@@ -359,8 +423,9 @@ class Worker():
         0,1: drop-off lat,lon
         2: remaining transportation time (approximated)
         3: total transportation time (approximated)
+        4: unit price
         '''
-        self.current_orders = np.zeros([self.num,int(self.max_capacity),4])
+        self.current_orders = np.zeros([self.num,int(self.max_capacity),5])
         self.current_order_num = np.zeros([self.num])
 
         # some records for simulation
@@ -395,7 +460,7 @@ class Worker():
         q_value[self.observe_space[:,3]!=0] = -INF
         return q_value.cpu().detach().numpy(), price_mu.cpu().detach().numpy(), price_sigma.cpu().detach().numpy(), order_state, worker_state
 
-    def update(self, feedback_table, new_route_table ,new_route_time_table ,new_remaining_time_table ,new_total_travel_time_table, worker_feed_back_table, current_time, final_step=False):
+    def update(self, feedback_table, new_route_table ,new_route_time_table ,new_remaining_time_table ,new_total_travel_time_table, worker_feed_back_table, current_time, final_step=False, episode=1):
         # update each worker state parallely
         results = Parallel(n_jobs=self.njobs)(
             delayed(single_update)(self.observe_space[i], self.current_orders[i], self.current_order_num[i], self.positive_history[i], self.negative_history[i], self.speed[i], self.capacity[i], self.travel_route[i], self.travel_time[i], self.experience[i], feedback_table[i], new_route_table[i], new_route_time_table[i], new_remaining_time_table[i], new_total_travel_time_table[i], worker_feed_back_table[i], self.reservation_value[i])
@@ -418,11 +483,11 @@ class Worker():
             # update state
             self.observe_space[i], self.current_orders[i], self.current_order_num[i], self.positive_history[i], self.negative_history[i], self.travel_route[i], self.travel_time[i], self.experience[i] \
                 = results[i][0], results[i][1], results[i][2], results[i][3], results[i][4], results[i][5], results[i][6], results[i][7]
-            if results[i][8] is not None:
-                self.buffer.append(results[i][8])
+            if self.is_train and results[i][8] is not None:
+                self.buffer.append(results[i][8],i,episode)
             if results[i][9] is not None:
                 self.Pass_Travel_Time.extend(results[i][9].tolist())
-            self.worker_reward[i] += self.gamma ** current_time * results[i][10]
+            self.worker_reward[i] += self.worker_gamma ** current_time * results[i][10]
 
         # # take the ending into consideration (to do, not sure about the effectiveness)
         # if final_step:
@@ -441,7 +506,8 @@ class Worker():
 
     def save(self, path1, path2):
         torch.save(self.Q_training.state_dict(), path1)
-        torch.save(self.Worker_Q_training.state_dict(), path2)
+        if self.intelligent_worker:
+            torch.save(self.Worker_Q_training.state_dict(), path2)
 
     def load(self, path1 = None, path2 = None, device = torch.device("cpu")):
         if device == torch.device("cpu"):
@@ -462,33 +528,38 @@ class Worker():
     def update_Qtarget(self,tau=0.005):
         for target_param, train_param in zip(self.Q_target.parameters(), self.Q_training.parameters()):
             target_param.data.copy_(tau * train_param.data + (1.0 - tau) * target_param.data)
-        for target_param, train_param in zip(self.Worker_Q_target.parameters(), self.Worker_Q_training.parameters()):
-            target_param.data.copy_(tau * train_param.data + (1.0 - tau) * target_param.data)
+        if self.intelligent_worker:
+            for target_param, train_param in zip(self.Worker_Q_target.parameters(), self.Worker_Q_training.parameters()):
+                target_param.data.copy_(tau * train_param.data + (1.0 - tau) * target_param.data)
 
     def train(self,batch_size=512,train_times=10,rate=1.0):
         c_loss=[]
         a_loss=[]
 
-        worker_loss = []
-
         pbar = tqdm.tqdm(range(train_times))
         torch.set_grad_enabled(True)
         self.Q_training.train()
-        self.Worker_Q_training.train()
         self.Q_target.eval()
-        self.Worker_Q_target.eval()
+
+        if self.intelligent_worker:
+            worker_loss = []
+            self.Worker_Q_training.train()
+            self.Worker_Q_target.eval()
+
         for _ in pbar:
         # for _ in range(train_times):
             worker_state, order_state, order_num, new_order_state, \
                 price_old, price_log_prob_old, reward, delta_t, \
                 worker_state_next, order_state_next, order_num_next, new_order_state_next, \
-                reservation_value, price_next, worker_action, worker_reward = self.buffer.sampling(batch_size, self.device)
+                reservation_value, price_next, worker_action, worker_reward, workload_current, workload_next = self.buffer.sampling(batch_size, self.device)
 
             x1, x2, x3 = norm(new_order_state,worker_state,order_state)
             current_state_value, price_mu, price_sigma = self.Q_training(x1,x2,x3,order_num)
             current_state_value, price_mu, price_sigma = torch.diag(current_state_value),torch.diag(price_mu),torch.diag(price_sigma)
-            current_worker_q_value = self.Worker_Q_training(torch.concat([x1,x2,reservation_value.unsqueeze(-1),price_old.unsqueeze(-1)],dim=-1), x3, order_num)
-            current_worker_q_value = current_worker_q_value[torch.arange(current_worker_q_value.size(0)),worker_action]
+
+            if self.intelligent_worker:
+                current_worker_q_value = self.Worker_Q_training(torch.concat([x1,x2,reservation_value.unsqueeze(-1),price_old.unsqueeze(-1)],dim=-1), x3, order_num)
+                current_worker_q_value = current_worker_q_value[torch.arange(current_worker_q_value.size(0)),worker_action]
 
             x1, x2, x3 = norm(new_order_state_next, worker_state_next, order_state_next)
             next_state_value, _, _ = self.Q_target(x1, x2, x3, order_num_next)
@@ -512,7 +583,8 @@ class Worker():
             actor_loss = torch.mean(-torch.min(surr1, surr2))
 
             # train platform_net
-            loss = critic_loss + actor_loss * 20
+            weight_actor = 20.0
+            loss = critic_loss + actor_loss * weight_actor
             self.optim.zero_grad()
             loss.backward()
             # torch.nn.utils.clip_grad_norm_(self.Q_training.parameters(), 1.0)  # avoid gradient explosion
@@ -531,36 +603,132 @@ class Worker():
             c_loss.append(critic_loss.item())
             a_loss.append(actor_loss.item())
 
+            if self.intelligent_worker:
+                # train worker_net
+                next_worker_q_value = self.Worker_Q_target(
+                    torch.concat([x1, x2, reservation_value.unsqueeze(-1), price_next.unsqueeze(-1)], dim=-1), x3,
+                    order_num_next)
 
-            # train worker_net
-            next_worker_q_value = self.Worker_Q_target(
-                torch.concat([x1, x2, reservation_value.unsqueeze(-1), price_next.unsqueeze(-1)], dim=-1), x3,
-                order_num_next)
+                # next_worker_q_value = torch.max(next_worker_q_value.detach(),dim=-1)[0]
+                next_worker_q_value_index = torch.max(self.Worker_Q_training(
+                    torch.concat([x1, x2, reservation_value.unsqueeze(-1), price_next.unsqueeze(-1)], dim=-1), x3,
+                    order_num_next).detach(), dim=-1)[1]
+                next_worker_q_value = next_worker_q_value[torch.arange(next_worker_q_value.size(0)), next_worker_q_value_index]
 
-            # next_worker_q_value = torch.max(next_worker_q_value.detach(),dim=-1)[0]
-            next_worker_q_value_index = torch.max(self.Worker_Q_training(
-                torch.concat([x1, x2, reservation_value.unsqueeze(-1), price_next.unsqueeze(-1)], dim=-1), x3,
-                order_num_next).detach(), dim=-1)[1]
-            next_worker_q_value = next_worker_q_value[torch.arange(next_worker_q_value.size(0)), next_worker_q_value_index]
+                # # Worker Environment Adaption
+                # # Important Notice: Worker Punishment Must be 0
+                # workload = worker_reward / price_old
+                # new_price = normal_dist.sample()
+                # worker_reward = workload * new_price
+                # worker_reward = worker_reward.detach()
 
-            # # Worker Environment Adaption
-            # # Important Notice: Worker Punishment Must be 0
-            # workload = worker_reward / price_old
-            # new_price = normal_dist.sample()
-            # worker_reward = workload * new_price
-            # worker_reward = worker_reward.detach()
-            rate = 1.0
 
-            worker_target = worker_reward + self.gamma ** delta_t * next_worker_q_value * rate
-            worker_target = worker_target.float()
 
-            loss = self.loss_func(current_worker_q_value, worker_target)
-            self.optim_worker.zero_grad()
+                rate = 1.0
+                worker_target = worker_reward + self.worker_gamma ** delta_t * next_worker_q_value * rate
+                worker_target = worker_target.float()
+
+                loss = self.loss_func(current_worker_q_value, worker_target)
+                self.optim_worker.zero_grad()
+                loss.backward()
+                # torch.nn.utils.clip_grad_norm_(self.Worker_Q_training.parameters(), 1.0)  # avoid gradient explosion
+
+                has_nan = False
+                for name, param in self.Worker_Q_training.named_parameters():
+                    if param.grad is not None:
+                        if torch.isnan(param.grad).any():
+                            has_nan = True
+                            break
+                if has_nan:
+                    # print("NAN Gradient->Skip")
+                    continue
+
+                self.optim_worker.step()
+                worker_loss.append(loss.item())
+
+
+        self.update_Qtarget()
+
+        if self.intelligent_worker:
+            return np.mean(c_loss), np.mean(a_loss), np.mean(worker_loss)
+        else:
+            return np.mean(c_loss), np.mean(a_loss)
+
+    def train_episode(self,episode,batch_size=512,train_times=30):
+        c_loss=[]
+        a_loss=[]
+
+        torch.set_grad_enabled(False)
+        self.Q_training.eval()
+
+        worker_state, order_state, order_num, new_order_state, \
+            price_old, price_log_prob_old, reward, delta_t, \
+            worker_state_next, order_state_next, order_num_next, new_order_state_next, \
+            reservation_value, price_next, worker_action, worker_reward, workload_current, workload_next, worker_id = self.buffer.sample_episode(
+            episode, self.device)
+
+        # first calculate the advantage for PPO actor
+        x1, x2, x3 = norm(new_order_state, worker_state, order_state)
+        current_state_value, _, _ = self.Q_training(x1, x2, x3, order_num)
+        current_state_value = torch.diag(current_state_value).detach()
+        x1, x2, x3 = norm(new_order_state_next, worker_state_next, order_state_next)
+        next_state_value, _, _ = self.Q_training(x1, x2, x3, order_num_next)
+        next_state_value = torch.diag(next_state_value).detach()
+
+        td_target = reward + self.gamma ** delta_t * next_state_value
+        td_delta = td_target - current_state_value
+        advantage = calculate_advantage(td_delta, delta_t, worker_id, gamma=self.gamma, lamada=0.95)
+
+        pbar = tqdm.tqdm(range(train_times))
+        torch.set_grad_enabled(True)
+        self.Q_training.train()
+
+        if self.intelligent_worker:
+            worker_loss = []
+            self.Worker_Q_training.train()
+            self.Worker_Q_target.eval()
+
+        for _ in pbar:
+            indices = torch.randint(0, advantage.shape[0], size=(int(batch_size),))
+            worker_state_temp, order_state_temp, order_num_temp, new_order_state_temp, \
+                price_old_temp, price_log_prob_old_temp, reward_temp, delta_t_temp, \
+                worker_state_next_temp, order_state_next_temp, order_num_next_temp, new_order_state_next_temp, \
+                reservation_value_temp, price_next_temp, worker_action_temp, worker_reward_temp, workload_current_temp, workload_next_temp, td_target_temp, advantage_temp = \
+                worker_state[indices], order_state[indices], order_num[indices], new_order_state[indices], \
+                    price_old[indices], price_log_prob_old[indices], reward[indices], delta_t[indices], \
+                    worker_state_next[indices], order_state_next[indices], order_num_next[indices], new_order_state_next[indices], \
+                    reservation_value[indices], price_next[indices], worker_action[indices], worker_reward[indices], workload_current[indices], workload_next[indices], td_target[indices], advantage[indices]
+
+
+            x1, x2, x3 = norm(new_order_state_temp,worker_state_temp,order_state_temp)
+            current_state_value, price_mu, price_sigma = self.Q_training(x1,x2,x3,order_num_temp)
+            current_state_value, price_mu, price_sigma = torch.diag(current_state_value),torch.diag(price_mu),torch.diag(price_sigma)
+
+            if self.intelligent_worker:
+                current_worker_q_value = self.Worker_Q_training(torch.concat([x1,x2,reservation_value_temp.unsqueeze(-1),price_old_temp.unsqueeze(-1)],dim=-1), x3, order_num_temp)
+                current_worker_q_value = current_worker_q_value[torch.arange(current_worker_q_value.size(0)),worker_action_temp]
+
+            td_target_temp = td_target_temp.float()
+
+            critic_loss = self.loss_func(current_state_value, td_target_temp)
+
+            normal_dist = torch.distributions.Normal(price_mu, price_sigma)
+            price_log_prob = normal_dist.log_prob(price_old_temp)
+            ratio = torch.exp(price_log_prob - price_log_prob_old_temp)
+
+            surr1 = ratio * advantage_temp
+            surr2 = torch.clamp(ratio,1-self.eps_clip,1+self.eps_clip) * advantage_temp
+            actor_loss = torch.mean(-torch.min(surr1, surr2))
+
+            # train platform_net
+            weight_actor = 5.0
+            loss = critic_loss + actor_loss * weight_actor
+            self.optim.zero_grad()
             loss.backward()
-            # torch.nn.utils.clip_grad_norm_(self.Worker_Q_training.parameters(), 1.0)  # avoid gradient explosion
+            # torch.nn.utils.clip_grad_norm_(self.Q_training.parameters(), 1.0)  # avoid gradient explosion
 
             has_nan = False
-            for name, param in self.Worker_Q_training.named_parameters():
+            for name, param in self.Q_training.named_parameters():
                 if param.grad is not None:
                     if torch.isnan(param.grad).any():
                         has_nan = True
@@ -569,13 +737,63 @@ class Worker():
                 # print("NAN Gradient->Skip")
                 continue
 
-            self.optim_worker.step()
-            worker_loss.append(loss.item())
+            self.optim.step()
+            c_loss.append(critic_loss.item())
+            a_loss.append(actor_loss.item())
+
+            if self.intelligent_worker:
+                x1, x2, x3 = norm(new_order_state_next_temp, worker_state_next_temp, order_state_next_temp)
+                # train worker_net
+                next_worker_q_value = self.Worker_Q_target(
+                    torch.concat([x1, x2, reservation_value_temp.unsqueeze(-1), price_next_temp.unsqueeze(-1)], dim=-1), x3,
+                    order_num_next_temp)
+
+                next_worker_q_value_index = torch.max(self.Worker_Q_training(
+                    torch.concat([x1, x2, reservation_value_temp.unsqueeze(-1), price_next_temp.unsqueeze(-1)], dim=-1), x3,
+                    order_num_next_temp).detach(), dim=-1)[1]
+                next_worker_q_value = next_worker_q_value[torch.arange(next_worker_q_value.size(0)), next_worker_q_value_index]
 
 
-        self.update_Qtarget()
+                worker_target = worker_reward_temp + self.worker_gamma ** delta_t_temp * next_worker_q_value
+                worker_target = worker_target.float()
 
-        return np.mean(c_loss), np.mean(a_loss), np.mean(worker_loss)
+                loss = self.loss_func(current_worker_q_value, worker_target)
+                self.optim_worker.zero_grad()
+                loss.backward()
+                # torch.nn.utils.clip_grad_norm_(self.Worker_Q_training.parameters(), 1.0)  # avoid gradient explosion
+
+                has_nan = False
+                for name, param in self.Worker_Q_training.named_parameters():
+                    if param.grad is not None:
+                        if torch.isnan(param.grad).any():
+                            has_nan = True
+                            break
+                if has_nan:
+                    # print("NAN Gradient->Skip")
+                    continue
+
+                self.optim_worker.step()
+                worker_loss.append(loss.item())
+
+
+        # self.update_Qtarget()
+
+        if self.intelligent_worker:
+            return np.mean(c_loss), np.mean(a_loss), np.mean(worker_loss)
+        else:
+            return np.mean(c_loss), np.mean(a_loss)
+
+def calculate_advantage(td_delta, delta_t, worker_id, gamma=0.99, lamada=0.95):
+    worker_num = torch.max(worker_id) + 1
+    advantage_worker = torch.zeros([int(worker_num)]).to(td_delta.device)
+    advantage_list = torch.zeros_like(td_delta).to(td_delta.device)
+
+    for i in range(len(td_delta)-1, -1, -1):
+        advantage_list[i] = advantage_worker[worker_id[i]] * (gamma * lamada)**delta_t[i] + td_delta[i]
+        advantage_worker[worker_id[i]] = advantage_list[i]
+
+    return advantage_list
+
 
 '''
 update state for each worker:
@@ -598,7 +816,7 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
     finished_order_time = None
     current_orders_num = int(current_orders_num)
     worker_reward = 0
-    update_rate = 0.1
+    update_rate = 0.05
     # take action
     if feedback is not None:
         worker_reward=worker_feed_back[1]
@@ -639,6 +857,7 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
             # print(new_remaining_time,new_total_travel_time,observe_space[4])
             current_orders[current_orders_num,2], current_orders[current_orders_num,3] = new_remaining_time[0], new_total_travel_time[0] # remaining travel time & total travel time (new orders)
             current_orders[current_orders_num, 0], current_orders[current_orders_num, 1] = feedback[0][-2][2], feedback[0][-2][3] # dlat,dlon (new orders)
+            current_orders[current_orders_num, 4] = feedback[1][0]
             current_orders_num += 1
 
     step = speed * 1 # 1min
@@ -697,13 +916,13 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
 
 if __name__ == '__main__':
     # test
-    worker=Worker(1000)
-    worker.reset()
-    import matplotlib.pyplot as plt
-    plt.plot(range(len(worker.positive_history)),worker.positive_history,'r')
-    plt.plot(range(len(worker.positive_history)),worker.negative_history,'b')
-    plt.show()
-    # plot_accept_rate()
+    # worker=Worker(1000)
+    # worker.reset()
+    # import matplotlib.pyplot as plt
+    # plt.plot(range(len(worker.positive_history)),worker.positive_history,'r')
+    # plt.plot(range(len(worker.positive_history)),worker.negative_history,'b')
+    # plt.show()
+    plot_accept_rate()
 
 
 

@@ -15,18 +15,17 @@ def get_args():
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--eps_clip', type=float, default=0.2)
-    parser.add_argument('--max_step', type=int, default=60) #test: 10
+    parser.add_argument('--max_step', type=int, default=60)
     parser.add_argument('--eval_episode', type=int, default=10)
     parser.add_argument('--converge_epoch', type=int, default=5)
     parser.add_argument('--minimum_episode', type=int, default=500)
-    parser.add_argument('--worker_num', type=int, default=1000) #test: 50
+    parser.add_argument('--worker_num', type=int, default=1000)
     parser.add_argument('--buffer_capacity', type=int, default=30000)
-    parser.add_argument('--demand_sample_rate', type=float, default=0.95)
+    parser.add_argument('--demand_sample_rate', type=float, default=0.2) # full: 0.95
     parser.add_argument('--order_max_wait_time', type=float, default=5.0)
     parser.add_argument('--order_threshold', type=float, default=40.0)
-    parser.add_argument('--reward_parameter', type=float, nargs='+', default=[4.0,5.0,4.0,3.0,1.0,5.0,1.0]) #ori: 10.0,5.0,3.0,2.0,1.0,4.0
+    parser.add_argument('--reward_parameter', type=float, nargs='+', default=[2.0,5.0,4.0,3.0,1.0,5.0,5.0])
     parser.add_argument('--reject_punishment', type=float, default=0.0)
-    parser.add_argument('--worker_reject_punishment', type=float, default=0.0)
 
     parser.add_argument('--epsilon', type=float, default=1.0)
     parser.add_argument('--epsilon_decay_rate', type=float, default=0.99)
@@ -39,6 +38,9 @@ def get_args():
     parser.add_argument('--njobs', type=int, default=24)
 
     parser.add_argument("--platform_model_path",type=str,default=None)
+
+    parser.add_argument("--intelligent_worker", action="store_true",default=False)
+    parser.add_argument('--worker_reject_punishment', type=float, default=0.0)
     parser.add_argument("--worker_model_path",type=str,default=None)
 
     parser.add_argument("--demand_path",type=str,default="./data/demand_evening_onehour.csv")
@@ -89,15 +91,21 @@ def main():
     exploration_rate = args.epsilon
     epsilon_decay_rate = args.epsilon_decay_rate
     epsilon_final = args.epsilon_final
+    intelligent_worker = args.intelligent_worker
 
     platform = Platform(discount_factor = args.gamma, njobs = args.njobs)
     demand = Demand(demand_path = args.demand_path)
     buffer = Buffer(capacity = args.buffer_capacity)
-    worker = Worker(buffer = buffer, lr = args.lr, gamma = args.gamma, eps_clip = args.eps_clip, max_step = args.max_step,
-                    num = args.worker_num,
-                    device = device, zone_table_path=args.zone_table_path, model_path = args.platform_model_path, worker_model_path = args.worker_model_path, njobs = args.njobs)
+    worker = Worker(buffer=buffer, lr=args.lr, gamma=args.gamma, eps_clip=args.eps_clip, max_step=args.max_step,
+                    num=args.worker_num,
+                    device=device, zone_table_path=args.zone_table_path, model_path=args.platform_model_path,
+                    worker_model_path=args.worker_model_path, njobs=args.njobs, intelligent_worker=intelligent_worker)
     reward_func = reward_func_generator(args.reward_parameter, args.order_threshold)
 
+    if intelligent_worker:
+        Worker_Q_training = worker.Worker_Q_training
+    else:
+        Worker_Q_training = None
 
     best_reward = -1e-8
     best_epoch = 0
@@ -106,8 +114,8 @@ def main():
     j = args.init_episode
     exploration_rate = max(exploration_rate * (epsilon_decay_rate**j), epsilon_final)
 
-    last_price_avg = 1.0
-    rate = 1.0
+    # last_price_avg = 1.0
+    # rate = 1.0
 
     while True:
         j += 1
@@ -127,19 +135,27 @@ def main():
             feedback_table, new_route_table, new_route_time_table, new_remaining_time_table, new_total_travel_time_table, accepted_orders, worker_feed_back_table = platform.feedback(
                 worker.observe_space, worker.reservation_value, worker.speed, worker.current_orders, worker.current_order_num,
                 assignment, order_state, price_mu, price_sigma, reward_func, args.reject_punishment, args.order_threshold, t,
-                worker.Worker_Q_training, exploration_rate, args.worker_reject_punishment, device, worker_state
+                Worker_Q_training, exploration_rate, args.worker_reject_punishment, device, worker_state
             )
-            worker.update(feedback_table, new_route_table, new_route_time_table, new_remaining_time_table, new_total_travel_time_table, worker_feed_back_table, t, (t==args.max_step-1))
+            worker.update(feedback_table, new_route_table, new_route_time_table, new_remaining_time_table, new_total_travel_time_table, worker_feed_back_table, t, (t==args.max_step-1), j)
             demand.pickup(accepted_orders)
             demand.update()
 
         price_pos = np.mean(platform.price_pos)
         price_neg = np.mean(platform.price_neg)
-        if j != 1:
-            rate = price_pos / last_price_avg
-        last_price_avg = price_pos
 
-        c_loss, a_loss, w_loss = worker.train(args.batch_size, args.train_times, rate=rate)
+        # if j != 1:
+        #     rate = price_pos / last_price_avg
+        # last_price_avg = price_pos
+
+        # c_loss, a_loss, w_loss = worker.train(args.batch_size, args.train_times, rate=rate)
+        if intelligent_worker:
+            # c_loss, a_loss, w_loss = worker.train(args.batch_size, args.train_times)
+            c_loss, a_loss, w_loss = worker.train_episode(j, args.batch_size, args.train_times)
+
+        else:
+            # c_loss, a_loss = worker.train(args.batch_size, args.train_times)
+            c_loss, a_loss = worker.train_episode(j, args.batch_size, args.train_times)
 
         total_pickup = platform.PickUp
         total_reward = platform.Total_Reward / args.worker_num
@@ -151,9 +167,13 @@ def main():
         average_detour = np.mean(np.array(platform.workload) - np.array(platform.direct_time))
         total_valid_distance = np.sum(platform.valid_distance)
 
-        log = "Train Episode {:} , Platform Reward {:} , Worker Reward {:} , Order Pickup {:} , Worker Reject Num {:} , Average Detour {:} , Average Travel Time {:} , Total Timeout Order {:} , Total Valid Distance {:} , Critic Loss {:} , Actor Loss {:}, Worker Loss {:}".format(
-            j, total_reward, worker_reward, total_pickup, worker_reject, average_detour, average_travel_time, total_timeout, total_valid_distance, c_loss, a_loss, w_loss
-        )
+        if intelligent_worker:
+            log = "Train Episode {:} , Platform Reward {:} , Worker Reward {:} , Order Pickup {:} , Worker Reject Num {:} , Average Detour {:} , Average Travel Time {:} , Total Timeout Order {:} , Total Valid Distance {:} , Critic Loss {:} , Actor Loss {:}, Worker Loss {:}".format(
+                j, total_reward, worker_reward, total_pickup, worker_reject, average_detour, average_travel_time, total_timeout, total_valid_distance, c_loss, a_loss, w_loss)
+        else:
+            log = "Train Episode {:} , Platform Reward {:} , Worker Reward {:} , Order Pickup {:} , Worker Reject Num {:} , Average Detour {:} , Average Travel Time {:} , Total Timeout Order {:} , Total Valid Distance {:} , Critic Loss {:} , Actor Loss {:}".format(
+                j, total_reward, worker_reward, total_pickup, worker_reject, average_detour, average_travel_time, total_timeout, total_valid_distance, c_loss, a_loss)
+
         print(log)
         with open("train.txt", 'a') as file:
             file.write(log+"\n")
@@ -161,8 +181,11 @@ def main():
 
         price_sigma_pos = np.mean(platform.price_sigma_pos)
         price_sigma_neg = np.mean(platform.price_sigma_neg)
-        print("Price Distribution Std: Pos {:} , Neg {:}".format(price_sigma_pos,price_sigma_neg))
-        print("Real Price Avg: Pos {:} , Neg {:}".format(price_pos,price_neg))
+        price_mu_pos = np.mean(platform.price_mu_pos)
+        price_mu_neg = np.mean(platform.price_mu_neg)
+        print("Price Distribution Mu: Pos {:} , Neg {:}".format(price_mu_pos, price_mu_neg))
+        print("Price Distribution Std: Pos {:} , Neg {:}".format(price_sigma_pos, price_sigma_neg))
+        print("Real Price Avg: Pos {:} , Neg {:}".format(price_pos, price_neg))
 
         if j % args.eval_episode == 0:
             reservation_value, speed, capacity, group = group_generation_func2(args.worker_num)
@@ -180,10 +203,10 @@ def main():
                     worker.observe_space, worker.reservation_value, worker.speed, worker.current_orders, worker.current_order_num,
                     assignment, order_state, price_mu, price_sigma, reward_func, args.reject_punishment,
                     args.order_threshold, t,
-                    worker.Worker_Q_training, 0, args.worker_reject_punishment, device, worker_state
+                    Worker_Q_training, 0, args.worker_reject_punishment, device, worker_state
                 )
                 worker.update(feedback_table, new_route_table, new_route_time_table, new_remaining_time_table,
-                              new_total_travel_time_table, worker_feed_back_table, t, (t == args.max_step - 1))
+                              new_total_travel_time_table, worker_feed_back_table, t, (t == args.max_step - 1), j)
                 demand.pickup(accepted_orders)
                 demand.update()
 
@@ -206,6 +229,9 @@ def main():
 
             price_sigma_pos = np.mean(platform.price_sigma_pos)
             price_sigma_neg = np.mean(platform.price_sigma_neg)
+            price_mu_pos = np.mean(platform.price_mu_pos)
+            price_mu_neg = np.mean(platform.price_mu_neg)
+            print("Price Distribution Mu: Pos {:} , Neg {:}".format(price_mu_pos, price_mu_neg))
             print("Price Distribution Std: Pos {:} , Neg {:}".format(price_sigma_pos, price_sigma_neg))
             price_pos = np.mean(platform.price_pos)
             price_neg = np.mean(platform.price_neg)
@@ -231,7 +257,11 @@ def main():
             with open('log.pkl', 'wb') as f:
                 pickle.dump(dic_list, f)
 
-            w = 1.0
+            if intelligent_worker:
+                w = 1.0
+            else:
+                w = 0
+
             if j >= args.minimum_episode:
                 if total_reward + worker_reward * w > best_reward:
                     best_epoch = 0
