@@ -191,10 +191,12 @@ def excute(observe, reservation_value, speed, current_order, current_order_num, 
             flag = (rand<=acc_rate)
         else:
             # print(price,reservation_value,price<reservation_value)
+
             if price<reservation_value:
                 flag = False
             else:
                 flag = True
+
             # acc_rate = accept_rate(price,reservation_value)
             # rand = random.random()
             # flag = (rand<=acc_rate)

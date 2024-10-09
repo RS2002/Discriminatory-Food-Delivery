@@ -140,10 +140,10 @@ class Buffer():
     def append(self,record, worker_id, episode=1):
         state, worker_current, action, reward, delta_t, next_state, worker_next = record
 
-        speed, capacity, positive, negative = state[1],state[2],state[3],state[4]
+        speed, capacity, positive, negative, time = state[1],state[2],state[3],state[4],state[5]
         state = state[0]
 
-        speed_next, capacity_next, positive_next, negative_next = next_state[1],next_state[2],next_state[3],next_state[4]
+        speed_next, capacity_next, positive_next, negative_next, time_next = next_state[1],next_state[2],next_state[3],next_state[4],next_state[5]
         next_state = next_state[0]
 
         if self.num == self.capacity:
@@ -171,7 +171,7 @@ class Buffer():
             self.num+=1
 
         worker_state_temp = state[0][:3].tolist()
-        worker_state_temp.extend([speed, capacity, positive, negative])
+        worker_state_temp.extend([speed, capacity, positive, negative, time/60])
         self.worker_state.append(worker_state_temp)
         self.order_state.append(state[1].tolist())
         self.order_num.append(state[2])
@@ -180,7 +180,7 @@ class Buffer():
         self.price_log_prob.append(action[1])
         self.delta_t.append(delta_t)
         worker_state_next_temp = next_state[0][:3].tolist()
-        worker_state_next_temp.extend([speed_next, capacity_next, positive_next, negative_next])
+        worker_state_next_temp.extend([speed_next, capacity_next, positive_next, negative_next, time_next/60])
         self.worker_state_next.append(worker_state_next_temp)
         self.order_state_next.append(next_state[1].tolist())
         self.order_num_next.append(next_state[2])
@@ -276,7 +276,7 @@ reservation_value/speed: 1.0 as baseline
 capacity: the maximum order number of each worker
 '''
 class Worker():
-    def __init__(self, buffer, lr=0.0001, gamma=0.99, eps_clip=0.2, max_step=60, history_num=3, num=1000, reservation_value=None, speed=None, capacity=None, group=None, device=None, zone_table_path = "./data/zone_table.csv", model_path = None,  worker_model_path = None, njobs = 24, intelligent_worker = False):
+    def __init__(self, buffer, lr=0.0001, gamma=0.99, eps_clip=0.2, max_step=60, history_num=5, num=1000, reservation_value=None, speed=None, capacity=None, group=None, device=None, zone_table_path = "../data/zone_table.csv", model_path = None,  worker_model_path = None, njobs = 24, intelligent_worker = False):
         super().__init__()
         self.intelligent_worker = intelligent_worker
 
@@ -295,8 +295,8 @@ class Worker():
         self.zone_lookup = pd.read_csv(zone_table_path)
         self.coordinate_lookup = np.array(self.zone_lookup[['lat','lon']])
 
-        self.Q_training = Q_Net(state_size=7, history_order_size=5, current_order_size=5, hidden_dim=64, head=1, bi_direction=False, dropout=0.0).to(device)
-        self.Q_target = Q_Net(state_size=7, history_order_size=5, current_order_size=5, hidden_dim=64, head=1, bi_direction=False, dropout=0.0).to(device)
+        self.Q_training = Q_Net(state_size=8, history_order_size=5, current_order_size=5, hidden_dim=64, head=1, bi_direction=False, dropout=0.0).to(device)
+        self.Q_target = Q_Net(state_size=8, history_order_size=5, current_order_size=5, hidden_dim=64, head=1, bi_direction=False, dropout=0.0).to(device)
         # if model_path is not None:
         #     self.Q_target.load_state_dict(torch.load(model_path))
         #     self.Q_training.load_state_dict(torch.load(model_path))
@@ -305,8 +305,8 @@ class Worker():
         #     self.Q_training.load_state_dict(torch.load(model_path,map_location=torch.device('cpu')))
 
         if self.intelligent_worker:
-            self.Worker_Q_training = Worker_Q_Net(input_size=14, history_order_size=5, output_dim=2, bi_direction=False, dropout=0.0).to(device)
-            self.Worker_Q_target = Worker_Q_Net(input_size=14, history_order_size=5, output_dim=2, bi_direction=False, dropout=0.0).to(device)
+            self.Worker_Q_training = Worker_Q_Net(input_size=15, history_order_size=5, output_dim=2, bi_direction=False, dropout=0.0).to(device)
+            self.Worker_Q_target = Worker_Q_Net(input_size=15, history_order_size=5, output_dim=2, bi_direction=False, dropout=0.0).to(device)
             # if worker_model_path is not None:
             #     self.Worker_Q_training.load_state_dict(torch.load(worker_model_path))
             #     self.Worker_Q_target.load_state_dict(torch.load(worker_model_path))
@@ -338,6 +338,8 @@ class Worker():
         self.njobs = njobs
 
     def reset(self, max_step=60, num=1000, reservation_value=None, speed=None, capacity=None, group=None, train=True):
+        self.time = 0
+
         if train:
             if self.intelligent_worker:
                 self.Worker_Q_training.train()
@@ -383,7 +385,7 @@ class Worker():
         #     index_neg=0
         #     while index_neg<self.history_num or index_pos<self.history_num:
         #         record = np.random.randn((5*self.history_num))
-        #         record = np.abs(record*0.05 + self.reservation_value[i])
+        #         record = np.abs(record*0.01 + self.reservation_value[i])
         #         rand = np.random.rand((5*self.history_num))
         #         for j in range(5*self.history_num):
         #             acc_rate = accept_rate(record[j],self.reservation_value[i])
@@ -400,6 +402,8 @@ class Worker():
         # '''
         # self.positive_history = np.mean(self.positive_history,axis=-1)
         # self.negative_history = np.mean(self.negative_history,axis=-1)
+
+
         self.positive_history = self.reservation_value + np.abs(np.random.randn(self.num)) * 0.005
         self.negative_history = self.reservation_value - np.abs(np.random.randn(self.num)) * 0.005
 
@@ -443,11 +447,14 @@ class Worker():
 
 
     def observe(self, order, current_time, exploration_rate=0):
+        self.time = current_time
+        t = np.array([[self.time / 60]]*self.num)
+
         # self.Q_training.eval()
         torch.set_grad_enabled(False)
         # 1. contstruct the worker state
         # print(self.observe_space.shape, self.speed.shape, self.capacity.shape, self.positive_history.shape, self.negative_history.shape)
-        worker_state = np.concatenate([self.observe_space[:,:3], np.expand_dims(self.speed, axis=-1), np.expand_dims(self.capacity, axis=-1), np.expand_dims(self.positive_history, axis=-1), np.expand_dims(self.negative_history, axis=-1)],axis=-1)
+        worker_state = np.concatenate([self.observe_space[:,:3], np.expand_dims(self.speed, axis=-1), np.expand_dims(self.capacity, axis=-1), np.expand_dims(self.positive_history, axis=-1), np.expand_dims(self.negative_history, axis=-1), t],axis=-1)
         # 2. construct the order state
         order_state = np.array(order[['plat','plon','dlat','dlon','minute']])
         order_state[:,-1] = current_time - order_state[:,-1] # waiting time
@@ -463,7 +470,7 @@ class Worker():
     def update(self, feedback_table, new_route_table ,new_route_time_table ,new_remaining_time_table ,new_total_travel_time_table, worker_feed_back_table, current_time, final_step=False, episode=1):
         # update each worker state parallely
         results = Parallel(n_jobs=self.njobs)(
-            delayed(single_update)(self.observe_space[i], self.current_orders[i], self.current_order_num[i], self.positive_history[i], self.negative_history[i], self.speed[i], self.capacity[i], self.travel_route[i], self.travel_time[i], self.experience[i], feedback_table[i], new_route_table[i], new_route_time_table[i], new_remaining_time_table[i], new_total_travel_time_table[i], worker_feed_back_table[i], self.reservation_value[i])
+            delayed(single_update)(self.observe_space[i], self.current_orders[i], self.current_order_num[i], self.positive_history[i], self.negative_history[i], self.speed[i], self.capacity[i], self.travel_route[i], self.travel_time[i], self.experience[i], feedback_table[i], new_route_table[i], new_route_time_table[i], new_remaining_time_table[i], new_total_travel_time_table[i], worker_feed_back_table[i], self.reservation_value[i], self.time)
             for i in range(self.num))
 
         for i in range(len(results)):
@@ -677,7 +684,7 @@ class Worker():
 
         td_target = reward + self.gamma ** delta_t * next_state_value
         td_delta = td_target - current_state_value
-        advantage = calculate_advantage(td_delta, delta_t, worker_id, gamma=self.gamma, lamada=0.95)
+        advantage = calculate_advantage(td_delta, delta_t, worker_id, gamma=self.gamma, lamada=0.9)
 
         pbar = tqdm.tqdm(range(train_times))
         torch.set_grad_enabled(True)
@@ -721,11 +728,11 @@ class Worker():
             actor_loss = torch.mean(-torch.min(surr1, surr2))
 
             # train platform_net
-            weight_actor = 5.0
+            weight_actor = 1.0
             loss = critic_loss + actor_loss * weight_actor
             self.optim.zero_grad()
             loss.backward()
-            # torch.nn.utils.clip_grad_norm_(self.Q_training.parameters(), 1.0)  # avoid gradient explosion
+            torch.nn.utils.clip_grad_norm_(self.Q_training.parameters(), 1.0)  # avoid gradient explosion
 
             has_nan = False
             for name, param in self.Q_training.named_parameters():
@@ -760,7 +767,7 @@ class Worker():
                 loss = self.loss_func(current_worker_q_value, worker_target)
                 self.optim_worker.zero_grad()
                 loss.backward()
-                # torch.nn.utils.clip_grad_norm_(self.Worker_Q_training.parameters(), 1.0)  # avoid gradient explosion
+                torch.nn.utils.clip_grad_norm_(self.Worker_Q_training.parameters(), 1.0)  # avoid gradient explosion
 
                 has_nan = False
                 for name, param in self.Worker_Q_training.named_parameters():
@@ -775,8 +782,7 @@ class Worker():
                 self.optim_worker.step()
                 worker_loss.append(loss.item())
 
-
-        # self.update_Qtarget()
+                self.update_Qtarget()
 
         if self.intelligent_worker:
             return np.mean(c_loss), np.mean(a_loss), np.mean(worker_loss)
@@ -811,7 +817,7 @@ full_experience: not None only if an experience is full filled
 finished_order_time: not None only if any order is finished
 worker_reward
 '''
-def single_update(observe_space, current_orders, current_orders_num, positive_history, negative_history, speed, capacity, current_travel_route, current_travel_time, experience, feedback, new_route ,new_route_time ,new_remaining_time ,new_total_travel_time, worker_feed_back, reservation_value):
+def single_update(observe_space, current_orders, current_orders_num, positive_history, negative_history, speed, capacity, current_travel_route, current_travel_time, experience, feedback, new_route ,new_route_time ,new_remaining_time ,new_total_travel_time, worker_feed_back, reservation_value, time):
     full_experience = None
     finished_order_time = None
     current_orders_num = int(current_orders_num)
@@ -828,7 +834,7 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
         # update experience
         if len(experience) > 0:
             experience.append(feedback[0][-1] - experience[0][-1]) # △t
-            experience.append([feedback[0],speed,capacity,positive_history,negative_history]) # s_next
+            experience.append([feedback[0],speed,capacity,positive_history,negative_history, time]) # s_next
             experience.append([worker_feed_back,reservation_value]) # worker_next
             # print([speed,capacity,positive_history,negative_history])
             if len(experience) == 7:
@@ -836,7 +842,7 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
             else:
                 print("There is a bug (experience)!!")
             experience = []
-        experience.append([feedback[0],speed,capacity,positive_history,negative_history]) # s_current
+        experience.append([feedback[0],speed,capacity,positive_history,negative_history, time]) # s_current
         experience.append([worker_feed_back, reservation_value])  # worker_current
         experience.append(feedback[1]) # a
         experience.append(feedback[2]) # r
@@ -916,13 +922,14 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
 
 if __name__ == '__main__':
     # test
-    # worker=Worker(1000)
-    # worker.reset()
-    # import matplotlib.pyplot as plt
-    # plt.plot(range(len(worker.positive_history)),worker.positive_history,'r')
-    # plt.plot(range(len(worker.positive_history)),worker.negative_history,'b')
-    # plt.show()
-    plot_accept_rate()
+    worker=Worker(1000)
+    reservation_value = np.linspace(0.85, 1.15, 1000)
+    worker.reset(reservation_value=reservation_value)
+    import matplotlib.pyplot as plt
+    plt.plot(range(len(worker.positive_history)),worker.positive_history,'r')
+    plt.plot(range(len(worker.positive_history)),worker.negative_history,'b')
+    plt.show()
+    # plot_accept_rate()
 
 
 

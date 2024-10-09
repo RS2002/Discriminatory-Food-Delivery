@@ -157,6 +157,8 @@ def main():
             # c_loss, a_loss = worker.train(args.batch_size, args.train_times)
             c_loss, a_loss = worker.train_episode(j, args.batch_size, args.train_times)
 
+        buffer.reset()
+
         total_pickup = platform.PickUp
         total_reward = platform.Total_Reward / args.worker_num
         # average_detour = np.mean(platform.Total_Detour)
