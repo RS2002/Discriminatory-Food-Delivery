@@ -276,9 +276,10 @@ reservation_value/speed: 1.0 as baseline
 capacity: the maximum order number of each worker
 '''
 class Worker():
-    def __init__(self, buffer, lr=0.0001, gamma=0.99, eps_clip=0.2, max_step=60, history_num=5, num=1000, reservation_value=None, speed=None, capacity=None, group=None, device=None, zone_table_path = "../data/zone_table.csv", model_path = None,  worker_model_path = None, njobs = 24, intelligent_worker = False):
+    def __init__(self, buffer, lr=0.0001, gamma=0.99, eps_clip=0.2, max_step=60, history_num=5, num=1000, reservation_value=None, speed=None, capacity=None, group=None, device=None, zone_table_path = "../data/zone_table.csv", model_path = None,  worker_model_path = None, njobs = 24, intelligent_worker = False, probability_worker = False):
         super().__init__()
         self.intelligent_worker = intelligent_worker
+        self.probability_worker = probability_worker
 
         self.buffer = buffer
         self.gamma = gamma
@@ -313,6 +314,7 @@ class Worker():
             # if worker_model_path is not None:
             #     self.Worker_Q_training.load_state_dict(torch.load(worker_model_path,map_location=torch.device('cpu')))
             #     self.Worker_Q_target.load_state_dict(torch.load(worker_model_path,map_location=torch.device('cpu')))
+
 
         self.load(model_path,worker_model_path,self.device)
         for param in self.Q_target.parameters():
@@ -377,35 +379,34 @@ class Worker():
         else:
             self.group = group
 
-
-        # self.positive_history = np.zeros([self.num,self.history_num])
-        # self.negative_history = np.zeros([self.num, self.history_num])
-        # for i in range(self.num):
-        #     index_pos=0
-        #     index_neg=0
-        #     while index_neg<self.history_num or index_pos<self.history_num:
-        #         record = np.random.randn((5*self.history_num))
-        #         record = np.abs(record*0.01 + self.reservation_value[i])
-        #         rand = np.random.rand((5*self.history_num))
-        #         for j in range(5*self.history_num):
-        #             acc_rate = accept_rate(record[j],self.reservation_value[i])
-        #             if rand[j]<=acc_rate and index_pos<self.history_num:
-        #                 self.positive_history[i,index_pos] = record[j]
-        #                 index_pos+=1
-        #             elif rand[j]>acc_rate and index_neg<self.history_num:
-        #                 self.negative_history[i,index_neg] = record[j]
-        #                 index_neg+=1
-        #             if index_pos>=self.history_num and index_pos>=self.history_num:
-        #                 break
-        # '''
-        # use single EMA to replace history record (reduce state space size)
-        # '''
-        # self.positive_history = np.mean(self.positive_history,axis=-1)
-        # self.negative_history = np.mean(self.negative_history,axis=-1)
-
-
-        self.positive_history = self.reservation_value + np.abs(np.random.randn(self.num)) * 0.005
-        self.negative_history = self.reservation_value - np.abs(np.random.randn(self.num)) * 0.005
+        if self.probability_worker:
+            self.positive_history = np.zeros([self.num,self.history_num])
+            self.negative_history = np.zeros([self.num, self.history_num])
+            for i in range(self.num):
+                index_pos=0
+                index_neg=0
+                while index_neg<self.history_num or index_pos<self.history_num:
+                    record = np.random.randn((5*self.history_num))
+                    record = np.abs(record*0.01 + self.reservation_value[i])
+                    rand = np.random.rand((5*self.history_num))
+                    for j in range(5*self.history_num):
+                        acc_rate = accept_rate(record[j],self.reservation_value[i])
+                        if rand[j]<=acc_rate and index_pos<self.history_num:
+                            self.positive_history[i,index_pos] = record[j]
+                            index_pos+=1
+                        elif rand[j]>acc_rate and index_neg<self.history_num:
+                            self.negative_history[i,index_neg] = record[j]
+                            index_neg+=1
+                        if index_pos>=self.history_num and index_pos>=self.history_num:
+                            break
+            '''
+            use single EMA to replace history record (reduce state space size)
+            '''
+            self.positive_history = np.mean(self.positive_history,axis=-1)
+            self.negative_history = np.mean(self.negative_history,axis=-1)
+        else:
+            self.positive_history = self.reservation_value + np.abs(np.random.randn(self.num)) * 0.005
+            self.negative_history = self.reservation_value - np.abs(np.random.randn(self.num)) * 0.005
 
         '''
         observation space

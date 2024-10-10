@@ -21,10 +21,10 @@ def get_args():
     parser.add_argument('--minimum_episode', type=int, default=500)
     parser.add_argument('--worker_num', type=int, default=1000)
     parser.add_argument('--buffer_capacity', type=int, default=30000)
-    parser.add_argument('--demand_sample_rate', type=float, default=0.2) # full: 0.95
+    parser.add_argument('--demand_sample_rate', type=float, default=0.95) # busy: 0.95, idle: 0.20
     parser.add_argument('--order_max_wait_time', type=float, default=5.0)
     parser.add_argument('--order_threshold', type=float, default=40.0)
-    parser.add_argument('--reward_parameter', type=float, nargs='+', default=[2.0,5.0,4.0,3.0,1.0,5.0,5.0])
+    parser.add_argument('--reward_parameter', type=float, nargs='+', default=[3.0,5.0,4.0,3.0,1.0,5.0,2.0])
     parser.add_argument('--reject_punishment', type=float, default=0.0)
 
     parser.add_argument('--epsilon', type=float, default=1.0)
@@ -42,6 +42,8 @@ def get_args():
     parser.add_argument("--intelligent_worker", action="store_true",default=False)
     parser.add_argument('--worker_reject_punishment', type=float, default=0.0)
     parser.add_argument("--worker_model_path",type=str,default=None)
+    parser.add_argument("--probability_worker", action="store_true",default=False)
+
 
     parser.add_argument("--demand_path",type=str,default="./data/demand_evening_onehour.csv")
     parser.add_argument("--zone_table_path",type=str,default="./data/zone_table.csv")
@@ -92,14 +94,15 @@ def main():
     epsilon_decay_rate = args.epsilon_decay_rate
     epsilon_final = args.epsilon_final
     intelligent_worker = args.intelligent_worker
+    probability_worker = args.probability_worker
 
-    platform = Platform(discount_factor = args.gamma, njobs = args.njobs)
+    platform = Platform(discount_factor = args.gamma, njobs = args.njobs, probability_worker = args.probability_worker)
     demand = Demand(demand_path = args.demand_path)
     buffer = Buffer(capacity = args.buffer_capacity)
     worker = Worker(buffer=buffer, lr=args.lr, gamma=args.gamma, eps_clip=args.eps_clip, max_step=args.max_step,
                     num=args.worker_num,
                     device=device, zone_table_path=args.zone_table_path, model_path=args.platform_model_path,
-                    worker_model_path=args.worker_model_path, njobs=args.njobs, intelligent_worker=intelligent_worker)
+                    worker_model_path=args.worker_model_path, njobs=args.njobs, intelligent_worker=intelligent_worker, probability_worker=probability_worker)
     reward_func = reward_func_generator(args.reward_parameter, args.order_threshold)
 
     if intelligent_worker:
@@ -261,20 +264,33 @@ def main():
 
             if intelligent_worker:
                 w = 1.0
-            else:
-                w = 0
+                if j >= args.minimum_episode:
+                    if total_reward + worker_reward * w > best_reward:
+                        best_epoch = 0
+                        best_reward = total_reward + worker_reward * w
+                        worker.save("platform_best.pth", "worker_best.pth")
+                    else:
+                        best_epoch += 1
+                    print("Converge Step: ", best_epoch)
 
-            if j >= args.minimum_episode:
-                if total_reward + worker_reward * w > best_reward:
+                    if best_epoch >= args.converge_epoch:
+                        break
+            else:
+                if total_reward > best_reward:
                     best_epoch = 0
-                    best_reward = total_reward + worker_reward * w
+                    best_reward = total_reward
                     worker.save("platform_best.pth", "worker_best.pth")
                 else:
                     best_epoch += 1
-                print("Converge Step: ", best_epoch)
 
-                if best_epoch >= args.converge_epoch :
-                    break
+                if j == args.minimum_episode:
+                    best_epoch = 0
+                elif j > args.minimum_episode:
+                    print("Converge Step: ", best_epoch)
+                    if best_epoch >= args.converge_epoch:
+                        break
+
+
 
 
 if __name__ == '__main__':

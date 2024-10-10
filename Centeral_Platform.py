@@ -8,10 +8,11 @@ from Worker import accept_rate, norm
 
 
 class Platform():
-    def __init__(self,discount_factor=0.99, njobs=24):
+    def __init__(self,discount_factor=0.99, njobs=24, probability_worker = False):
         super().__init__()
         self.reset(discount_factor)
         self.njobs = njobs
+        self.probability_worker = probability_worker
 
     def reset(self,discount_factor=0.99):
         self.discount_factor = discount_factor
@@ -67,7 +68,7 @@ class Platform():
         worker_feed_back_table = []
 
         results = Parallel(n_jobs=self.njobs)(
-            delayed(excute)(observe[i], reservation_value[i], speed[i], current_order[i], current_order_num[i], assignment[i], new_orders_state, price_mu[i], price_sigma[i], reward_func, punish_rate, threshold, current_time, worker_Q_Net, exploration_rate, worker_reject_punishment, device, worker_state[i])
+            delayed(excute)(observe[i], reservation_value[i], speed[i], current_order[i], current_order_num[i], assignment[i], new_orders_state, price_mu[i], price_sigma[i], reward_func, punish_rate, threshold, current_time, worker_Q_Net, exploration_rate, worker_reject_punishment, device, worker_state[i], self.probability_worker)
             for i
             in range(observe.shape[0]))
 
@@ -150,7 +151,7 @@ accept_order: accepted order number
 worker_feedback: used for worker network
 log: direct transportation time & workload time
 '''
-def excute(observe, reservation_value, speed, current_order, current_order_num, assignment, new_orders_state, price_mu_vector, price_sigma_vector, reward_func, punish_rate, threshold, current_time, worker_Q_Net, exploration_rate, worker_reject_punishment, device, worker_state):
+def excute(observe, reservation_value, speed, current_order, current_order_num, assignment, new_orders_state, price_mu_vector, price_sigma_vector, reward_func, punish_rate, threshold, current_time, worker_Q_Net, exploration_rate, worker_reject_punishment, device, worker_state, probability_worker):
     current_order_num = int(current_order_num)
     if assignment is not None and observe[3] == 0:
         price_mu, price_sigma = price_mu_vector[assignment], price_sigma_vector[assignment]
@@ -176,7 +177,11 @@ def excute(observe, reservation_value, speed, current_order, current_order_num, 
                 x = torch.from_numpy(x).to(device)
                 x_order_norm = torch.from_numpy(x_order_norm).to(device)
                 worker_q_value = worker_Q_Net(x, x_order_norm, torch.tensor([current_order_num]).to(device))
-                acc_rate = int(worker_q_value[0, 1]>=worker_q_value[0, 0])
+                # acc_rate = int(worker_q_value[0, 1]>=worker_q_value[0, 0])
+
+                acc_rate = torch.softmax(worker_q_value[0], dim=-1)
+                acc_rate = acc_rate[1]
+
 
             # worker_Q_Net.eval() # no ε-greedy to avoid platform network cannot converge
             # torch.set_grad_enabled(False)
@@ -191,15 +196,17 @@ def excute(observe, reservation_value, speed, current_order, current_order_num, 
             flag = (rand<=acc_rate)
         else:
             # print(price,reservation_value,price<reservation_value)
-
-            if price<reservation_value:
-                flag = False
+            if probability_worker:
+                acc_rate = accept_rate(price,reservation_value)
+                rand = random.random()
+                flag = (rand<=acc_rate)
             else:
-                flag = True
+                if price<reservation_value:
+                    flag = False
+                else:
+                    flag = True
 
-            # acc_rate = accept_rate(price,reservation_value)
-            # rand = random.random()
-            # flag = (rand<=acc_rate)
+
 
         if flag: #accept
             accept_order = assignment

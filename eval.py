@@ -40,6 +40,8 @@ def get_args():
     parser.add_argument("--platform_model_path",type=str,default="platform_best.pth")
     parser.add_argument('--test_times', type=int, default=5)
 
+    parser.add_argument("--probability_worker", action="store_true",default=False)
+
     parser.add_argument("--intelligent_worker", action="store_true",default=False)
     parser.add_argument('--worker_reject_punishment', type=float, default=0.0)
     parser.add_argument("--worker_model_path",type=str,default=None)
@@ -91,14 +93,16 @@ def main():
 
 
     intelligent_worker = args.intelligent_worker
+    probability_worker = args.probability_worker
 
-    platform = Platform(discount_factor = args.gamma, njobs = args.njobs)
-    demand = Demand(demand_path = args.demand_path)
-    buffer = Buffer(capacity = args.buffer_capacity)
+    platform = Platform(discount_factor=args.gamma, njobs=args.njobs, probability_worker=args.probability_worker)
+    demand = Demand(demand_path=args.demand_path)
+    buffer = Buffer(capacity=args.buffer_capacity)
     worker = Worker(buffer=buffer, lr=args.lr, gamma=args.gamma, eps_clip=args.eps_clip, max_step=args.max_step,
                     num=args.worker_num,
                     device=device, zone_table_path=args.zone_table_path, model_path=args.platform_model_path,
-                    worker_model_path=args.worker_model_path, njobs=args.njobs, intelligent_worker=intelligent_worker)
+                    worker_model_path=args.worker_model_path, njobs=args.njobs, intelligent_worker=intelligent_worker,
+                    probability_worker=probability_worker)
     reward_func = reward_func_generator(args.reward_parameter, args.order_threshold)
 
     if intelligent_worker:
