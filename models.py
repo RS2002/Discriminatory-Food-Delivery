@@ -183,9 +183,11 @@ class Q_Net(nn.Module):
         # price_sigma_matrix = price_sigma_matrix ** 2 + 1e-8
         # price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.1
         # price_sigma_matrix = self.relu(price_sigma_matrix) + 1e-8
-        price_sigma_matrix = self.softplus(price_sigma_matrix)
+        # price_sigma_matrix = self.softplus(price_sigma_matrix)
         # price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.5
         # price_sigma_matrix = self.softplus(price_sigma_matrix) * 0.5
+        price_sigma_matrix = self.softplus(price_sigma_matrix) + 1e-5
+
 
         return q_matrix,price_mu_matrix,price_sigma_matrix
 

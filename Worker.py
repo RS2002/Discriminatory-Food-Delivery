@@ -327,13 +327,16 @@ class Worker():
                 param.requires_grad = False
             self.Worker_Q_target.eval()
             print('Worker total parameters:', sum(p.numel() for p in self.Worker_Q_training.parameters() if p.requires_grad))
-            self.optim_worker = torch.optim.Adam(self.Worker_Q_training.parameters(), lr=lr*0.05)
+            self.optim_worker = torch.optim.Adam(self.Worker_Q_training.parameters(), lr=lr, weight_decay=0.01)
+            self.schedule_worker = torch.optim.lr_scheduler.ExponentialLR(self.optim_worker, gamma=0.99)
 
         self.update_Qtarget(tau=0.0)
 
 
-        self.optim = torch.optim.Adam(self.Q_training.parameters(), lr=lr)
+        self.optim = torch.optim.Adam(self.Q_training.parameters(), lr=lr, weight_decay=0.01)
         self.loss_func = nn.MSELoss()
+
+        self.schedule = torch.optim.lr_scheduler.ExponentialLR(self.optim, gamma=0.99)
 
         # self.reset(max_step,num,reservation_value, speed, capacity, group)
 
@@ -591,7 +594,7 @@ class Worker():
             actor_loss = torch.mean(-torch.min(surr1, surr2))
 
             # train platform_net
-            weight_actor = 20.0
+            weight_actor = 1.0
             loss = critic_loss + actor_loss * weight_actor
             self.optim.zero_grad()
             loss.backward()
@@ -786,8 +789,10 @@ class Worker():
                 self.update_Qtarget()
 
         if self.intelligent_worker:
+            self.schedule_worker.step()
             return np.mean(c_loss), np.mean(a_loss), np.mean(worker_loss)
         else:
+            self.schedule.step()
             return np.mean(c_loss), np.mean(a_loss)
 
 def calculate_advantage(td_delta, delta_t, worker_id, gamma=0.99, lamada=0.95):
