@@ -187,9 +187,24 @@ class Q_Net(nn.Module):
         # price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.5
         # price_sigma_matrix = self.softplus(price_sigma_matrix) * 0.5
         price_sigma_matrix = self.softplus(price_sigma_matrix) + 1e-5
+        # price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.3 + 1e-5
+        # price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.5 + 1e-5
 
 
         return q_matrix,price_mu_matrix,price_sigma_matrix
+
+    def feature_freeze(self):
+        for layer in self.worker_net.children():
+            params = layer.parameters()
+            for p in params:
+                if p.grad is not None:
+                    p.grad[...] = 0
+
+        for layer in self.order_net.children():
+            params = layer.parameters()
+            for p in params:
+                if p.grad is not None:
+                    p.grad[...] = 0
 
 class Worker_Q_Net(nn.Module):
     def __init__(self, input_size=14, history_order_size=4, output_dim=2, bi_direction=False, dropout=0.0): # (7+1)+(5+1)=14
@@ -215,12 +230,6 @@ class Worker_Q_Net(nn.Module):
         y = self.worker_net(x,x_order,order_num) # [reject_prob,accept_prob]
         return y
 
-def parameter_freeze(model, prob):
-    for layer in model:
-        params = layer.parameters()
-        for p in params:
-            num = int(p.shape[0] * prob)
-            p.grad[0:num] = 0
 
 # test
 if __name__ == '__main__':
@@ -245,11 +254,32 @@ if __name__ == '__main__':
     # print(y.shape)
 
     model = Q_Net()
+    optm = torch.optim.Adam(model.parameters(), lr=0.001)
+    loss_func = nn.MSELoss()
+
     x_state = torch.randn([2,7])
     x_order = torch.randn([2,10,4])
     order_num =  torch.tensor([5,3],dtype=torch.int)
     order_state = torch.randn([4,5])
     q_value, price_mu, price_sigma = model(order_state,x_state,x_order,order_num)
-    print(q_value.shape)
-    print(price_mu.shape)
-    print(price_sigma.shape)
+    # print(q_value.shape)
+    # print(price_mu.shape)
+    # print(price_sigma.shape)
+    y = torch.zeros_like(q_value)
+    loss = loss_func(q_value,y)
+    loss.backward()
+    torch.nn.utils.clip_grad_norm_(set(model.attention_price_mu.parameters())|set(model.attention_price_sigma.parameters()), 1.0)
+
+    for layer in model.worker_net.children():
+        params = layer.parameters()
+        for p in params:
+            print(p.grad)
+
+    model.feature_freeze()
+
+    for layer in model.worker_net.children():
+        params = layer.parameters()
+        for p in params:
+            print(p.grad)
+
+    optm.step()

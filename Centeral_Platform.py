@@ -124,9 +124,9 @@ beta_list[6]: add punishment to unit price directly
 def reward_func_generator(beta_list, threshold):
     def reward(time_add,time_out,salary,direct_distance,unit_price):
         if time_add <= threshold:
-            r = beta_list[0] + beta_list[1] * direct_distance / 1000  - beta_list[2] * salary / 100 - beta_list[3] * time_out - beta_list[4] * time_add / 60 - beta_list[6] * unit_price
+            r = beta_list[0] + beta_list[1] * direct_distance / 1000  - beta_list[2] * salary / 100 - beta_list[3] * time_out - beta_list[4] * time_add / 60 - beta_list[6] * (unit_price - 1.0)
         else:
-            r = beta_list[0] + beta_list[1] * direct_distance / 1000  - beta_list[2] * salary / 100 - beta_list[3] * time_out - beta_list[4] * time_add / 60 - beta_list[6] * unit_price - beta_list[5] * (time_add - threshold)
+            r = beta_list[0] + beta_list[1] * direct_distance / 1000  - beta_list[2] * salary / 100 - beta_list[3] * time_out - beta_list[4] * time_add / 60 - beta_list[6] * (unit_price - 1.0) - beta_list[5] * (time_add - threshold) / 60
         return r
     return reward
 
