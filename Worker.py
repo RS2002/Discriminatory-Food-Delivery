@@ -868,6 +868,8 @@ class Worker():
         advantage_target = calculate_advantage(td_delta_target, delta_t, worker_id, gamma=self.gamma, lamada=0.7)
         advantage = (advantage_target + advantage) / 2
 
+        td_target = torch.min(td_target,td_target_target)
+
 
         pbar = tqdm.tqdm(range(train_times))
         torch.set_grad_enabled(True)

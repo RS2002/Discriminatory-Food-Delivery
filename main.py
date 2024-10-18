@@ -45,8 +45,8 @@ def get_args():
     parser.add_argument("--probability_worker", action="store_true",default=False)
 
 
-    parser.add_argument("--demand_path",type=str,default="./data/demand_evening_onehour.csv")
-    parser.add_argument("--zone_table_path",type=str,default="./data/zone_table.csv")
+    parser.add_argument("--demand_path",type=str,default="../data/demand_evening_onehour.csv")
+    parser.add_argument("--zone_table_path",type=str,default="../data/zone_table.csv")
     parser.add_argument('--reward_threshold', type=float, default=-1)
 
     args = parser.parse_args()
