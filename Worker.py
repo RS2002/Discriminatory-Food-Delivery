@@ -502,19 +502,20 @@ class Worker():
                 self.Pass_Travel_Time.extend(results[i][9].tolist())
             self.worker_reward[i] += self.worker_gamma ** current_time * results[i][10]
 
-        # # take the ending into consideration (to do, not sure about the effectiveness)
-        # if final_step:
-        #     for i in range(self.num):
-        #         if len(self.experience[i])>0:
-        #             self.experience[i].append(self.max_step-self.experience[i][0][-1])
-        #             self.experience[i].append(None)
-        #             if len(self.experience[i]) == 5:
-        #                 self.buffer.append(self.experience[i])
-        #             else:
-        #                 print("There is a bug (final experience)!!")
-        #     finished_order_time = self.current_orders[i, :, 3]
-        #     finished_order_time = finished_order_time[finished_order_time!=0]
-        #     self.Pass_Travel_Time.extend(finished_order_time.tolist())
+        # take the ending into consideration
+        if final_step:
+            for i in range(self.num):
+                if len(self.experience[i])>0:
+                    self.experience[i].append(-1) # △t: -1 represents done
+                    self.experience[i].append(self.experience[i][0]) # meaningless: only used to keep a same dimension
+                    self.experience[i].append(self.experience[i][1])
+                    if len(self.experience[i]) == 7:
+                        self.buffer.append(self.experience[i],i,episode)
+                    else:
+                        print("There is a bug (final experience)!!")
+            # finished_order_time = self.current_orders[i, :, 3]
+            # finished_order_time = finished_order_time[finished_order_time!=0]
+            # self.Pass_Travel_Time.extend(finished_order_time.tolist())
 
 
     def save(self, path1, path2):
@@ -527,14 +528,14 @@ class Worker():
             if path1 is not None:
                 self.Q_target.load_state_dict(torch.load(path1,map_location=torch.device('cpu')))
                 self.Q_training.load_state_dict(torch.load(path1,map_location=torch.device('cpu')))
-            if path2 is not None:
+            if self.intelligent_worker and path2 is not None:
                 self.Worker_Q_training.load_state_dict(torch.load(path2,map_location=torch.device('cpu')))
                 self.Worker_Q_target.load_state_dict(torch.load(path2,map_location=torch.device('cpu')))
         else:
             if path1 is not None:
                 self.Q_target.load_state_dict(torch.load(path1))
                 self.Q_training.load_state_dict(torch.load(path1))
-            if path2 is not None:
+            if self.intelligent_worker and path2 is not None:
                 self.Worker_Q_training.load_state_dict(torch.load(path2))
                 self.Worker_Q_target.load_state_dict(torch.load(path2))
 
@@ -667,7 +668,172 @@ class Worker():
     #     else:
     #         return np.mean(c_loss), np.mean(a_loss)
 
-    def train_episode(self,episode,batch_size=512,train_times=30):
+    # def train_episode(self,episode,batch_size=512,train_times=30,actor_rate=1.0,freeze=False):
+    #     c_loss=[]
+    #     a_loss=[]
+    #
+    #     torch.set_grad_enabled(False)
+    #     self.Q_training.eval()
+    #
+    #     worker_state, order_state, order_num, new_order_state, \
+    #         price_old, price_log_prob_old, reward, delta_t, \
+    #         worker_state_next, order_state_next, order_num_next, new_order_state_next, \
+    #         reservation_value, price_next, worker_action, worker_reward, workload_current, workload_next, worker_id = self.buffer.sample_episode(
+    #         episode, self.device)
+    #
+    #     # first calculate the advantage for PPO actor
+    #     x1, x2, x3 = norm(new_order_state, worker_state, order_state)
+    #     current_state_value, _, _ = self.Q_training(x1, x2, x3, order_num)
+    #     current_state_value = torch.diag(current_state_value).detach()
+    #     x1, x2, x3 = norm(new_order_state_next, worker_state_next, order_state_next)
+    #     next_state_value, _, _ = self.Q_training(x1, x2, x3, order_num_next)
+    #     next_state_value = torch.diag(next_state_value).detach()
+    #
+    #     is_done = (delta_t == -1).float()
+    #     td_target = reward + (self.gamma ** delta_t * next_state_value) * (1 - is_done)
+    #     td_delta = td_target - current_state_value
+    #     advantage = calculate_advantage(td_delta, delta_t, worker_id, gamma=self.gamma, lamada=0.7)
+    #
+    #     pbar = tqdm.tqdm(range(train_times))
+    #     torch.set_grad_enabled(True)
+    #     self.Q_training.train()
+    #
+    #     if self.intelligent_worker:
+    #         worker_loss = []
+    #         self.Worker_Q_training.train()
+    #         self.Worker_Q_target.eval()
+    #
+    #     for _ in pbar:
+    #         indices = torch.randint(0, advantage.shape[0], size=(int(batch_size),))
+    #         worker_state_temp, order_state_temp, order_num_temp, new_order_state_temp, \
+    #             price_old_temp, price_log_prob_old_temp, reward_temp, delta_t_temp, \
+    #             worker_state_next_temp, order_state_next_temp, order_num_next_temp, new_order_state_next_temp, \
+    #             reservation_value_temp, price_next_temp, worker_action_temp, worker_reward_temp, workload_current_temp, workload_next_temp, td_target_temp, advantage_temp = \
+    #             worker_state[indices], order_state[indices], order_num[indices], new_order_state[indices], \
+    #                 price_old[indices], price_log_prob_old[indices], reward[indices], delta_t[indices], \
+    #                 worker_state_next[indices], order_state_next[indices], order_num_next[indices], new_order_state_next[indices], \
+    #                 reservation_value[indices], price_next[indices], worker_action[indices], worker_reward[indices], workload_current[indices], workload_next[indices], td_target[indices], advantage[indices]
+    #
+    #
+    #         x1, x2, x3 = norm(new_order_state_temp,worker_state_temp,order_state_temp)
+    #         current_state_value, price_mu, price_sigma = self.Q_training(x1,x2,x3,order_num_temp)
+    #
+    #         # sigma_mean = torch.mean(price_sigma)
+    #         # entropy_loss = gaussian_entropy(price_sigma)
+    #         entropy_loss = 0
+    #
+    #         current_state_value, price_mu, price_sigma = torch.diag(current_state_value),torch.diag(price_mu),torch.diag(price_sigma)
+    #
+    #         if self.intelligent_worker:
+    #             current_worker_q_value = self.Worker_Q_training(torch.concat([x1,x2,reservation_value_temp.unsqueeze(-1),price_old_temp.unsqueeze(-1)],dim=-1), x3, order_num_temp)
+    #             current_worker_q_value = current_worker_q_value[torch.arange(current_worker_q_value.size(0)),worker_action_temp]
+    #
+    #         td_target_temp = td_target_temp.float()
+    #
+    #         critic_loss = self.loss_func(current_state_value, td_target_temp)
+    #
+    #         normal_dist = torch.distributions.Normal(price_mu, price_sigma)
+    #         price_log_prob = normal_dist.log_prob(price_old_temp)
+    #         ratio = torch.exp(price_log_prob - price_log_prob_old_temp)
+    #
+    #         surr1 = ratio * advantage_temp
+    #         surr2 = torch.clamp(ratio,1-self.eps_clip,1+self.eps_clip) * advantage_temp
+    #         actor_loss = torch.mean(-torch.min(surr1, surr2))
+    #
+    #         # train platform_net
+    #         # weight_actor = 1.0
+    #         # loss = critic_loss + actor_loss * weight_actor
+    #
+    #         # if episode % 2 == 0:
+    #         #     loss = critic_loss
+    #         # else:
+    #         #     loss = actor_loss
+    #
+    #         if episode % 2 == 0:
+    #             loss = actor_rate * (actor_loss + 0.01 * entropy_loss)+ critic_loss
+    #         else:
+    #             loss = critic_loss * 5
+    #
+    #         self.optim.zero_grad()
+    #         loss.backward()
+    #
+    #         if freeze:
+    #             self.Q_training.feature_freeze()
+    #
+    #         # if episode > 35:
+    #         #     self.Q_training.feature_freeze()
+    #         #     # torch.nn.utils.clip_grad_norm_(self.Q_training.attention.parameters(), 1.0)
+    #         #     # torch.nn.utils.clip_grad_norm_(self.Q_training.attention_price_sigma.parameters(), 1.0)
+    #         #     # torch.nn.utils.clip_grad_norm_(self.Q_training.attention_price_mu.parameters(), 1.0)
+    #         #     # torch.nn.utils.clip_grad_norm_(set(self.Q_training.attention_price_mu.parameters()) | set(self.Q_training.attention_price_sigma.parameters()), 1.0)
+    #         # else:
+    #         #     # torch.nn.utils.clip_grad_norm_(self.Q_training.parameters(), 1.0)  # avoid gradient explosion
+    #         #     pass
+    #         # # torch.nn.utils.clip_grad_norm_(self.Q_training.parameters(), 1.0)  # avoid gradient explosion
+    #
+    #
+    #         has_nan = False
+    #         for name, param in self.Q_training.named_parameters():
+    #             if param.grad is not None:
+    #                 if torch.isnan(param.grad).any():
+    #                     has_nan = True
+    #                     break
+    #         if has_nan:
+    #             # print("NAN Gradient->Skip")
+    #             continue
+    #
+    #         self.optim.step()
+    #         c_loss.append(critic_loss.item())
+    #         a_loss.append(actor_loss.item())
+    #
+    #         if self.intelligent_worker:
+    #             x1, x2, x3 = norm(new_order_state_next_temp, worker_state_next_temp, order_state_next_temp)
+    #             # train worker_net
+    #             next_worker_q_value = self.Worker_Q_target(
+    #                 torch.concat([x1, x2, reservation_value_temp.unsqueeze(-1), price_next_temp.unsqueeze(-1)], dim=-1), x3,
+    #                 order_num_next_temp)
+    #
+    #             next_worker_q_value_index = torch.max(self.Worker_Q_training(
+    #                 torch.concat([x1, x2, reservation_value_temp.unsqueeze(-1), price_next_temp.unsqueeze(-1)], dim=-1), x3,
+    #                 order_num_next_temp).detach(), dim=-1)[1]
+    #             next_worker_q_value = next_worker_q_value[torch.arange(next_worker_q_value.size(0)), next_worker_q_value_index]
+    #
+    #
+    #             is_done_temp = (delta_t_temp == -1).float()
+    #             worker_target = worker_reward_temp + (self.worker_gamma ** delta_t_temp * next_worker_q_value) * (1 - is_done_temp)
+    #             worker_target = worker_target.float()
+    #
+    #             loss = self.loss_func(current_worker_q_value, worker_target)
+    #             self.optim_worker.zero_grad()
+    #             loss.backward()
+    #             torch.nn.utils.clip_grad_norm_(self.Worker_Q_training.parameters(), 1.0)  # avoid gradient explosion
+    #
+    #             has_nan = False
+    #             for name, param in self.Worker_Q_training.named_parameters():
+    #                 if param.grad is not None:
+    #                     if torch.isnan(param.grad).any():
+    #                         has_nan = True
+    #                         break
+    #             if has_nan:
+    #                 # print("NAN Gradient->Skip")
+    #                 continue
+    #
+    #             self.optim_worker.step()
+    #             worker_loss.append(loss.item())
+    #
+    #             self.update_Qtarget()
+    #
+    #     if self.intelligent_worker:
+    #         # self.schedule_worker.step()
+    #         # self.schedule.step()
+    #         return np.mean(c_loss), np.mean(a_loss), np.mean(worker_loss)
+    #     else:
+    #         self.schedule.step()
+    #         return np.mean(c_loss), np.mean(a_loss)
+
+
+    def train_actor(self,episode,batch_size=512,train_times=10,actor_rate=1.0,freeze=False):
+
         c_loss=[]
         a_loss=[]
 
@@ -684,22 +850,29 @@ class Worker():
         x1, x2, x3 = norm(new_order_state, worker_state, order_state)
         current_state_value, _, _ = self.Q_training(x1, x2, x3, order_num)
         current_state_value = torch.diag(current_state_value).detach()
+        current_state_value_target, _, _ = self.Q_target(x1, x2, x3, order_num)
+        current_state_value_target = torch.diag(current_state_value_target).detach()
+
         x1, x2, x3 = norm(new_order_state_next, worker_state_next, order_state_next)
         next_state_value, _, _ = self.Q_training(x1, x2, x3, order_num_next)
         next_state_value = torch.diag(next_state_value).detach()
+        next_state_value_target, _, _ = self.Q_target(x1, x2, x3, order_num_next)
+        next_state_value_target = torch.diag(next_state_value_target).detach()
 
-        td_target = reward + self.gamma ** delta_t * next_state_value
+        is_done = (delta_t == -1).float()
+        td_target = reward + (self.gamma ** delta_t * next_state_value) * (1 - is_done)
         td_delta = td_target - current_state_value
-        advantage = calculate_advantage(td_delta, delta_t, worker_id, gamma=self.gamma, lamada=0.2)
+        advantage = calculate_advantage(td_delta, delta_t, worker_id, gamma=self.gamma, lamada=0.7)
+        td_target_target = reward + (self.gamma ** delta_t * next_state_value_target) * (1 - is_done)
+        td_delta_target = td_target_target - current_state_value_target
+        advantage_target = calculate_advantage(td_delta_target, delta_t, worker_id, gamma=self.gamma, lamada=0.7)
+        advantage = (advantage_target + advantage) / 2
+
 
         pbar = tqdm.tqdm(range(train_times))
         torch.set_grad_enabled(True)
         self.Q_training.train()
 
-        if self.intelligent_worker:
-            worker_loss = []
-            self.Worker_Q_training.train()
-            self.Worker_Q_target.eval()
 
         for _ in pbar:
             indices = torch.randint(0, advantage.shape[0], size=(int(batch_size),))
@@ -715,17 +888,12 @@ class Worker():
 
             x1, x2, x3 = norm(new_order_state_temp,worker_state_temp,order_state_temp)
             current_state_value, price_mu, price_sigma = self.Q_training(x1,x2,x3,order_num_temp)
-
             # sigma_mean = torch.mean(price_sigma)
-
+            entropy_loss = gaussian_entropy(price_sigma)
+            # entropy_loss = 0
             current_state_value, price_mu, price_sigma = torch.diag(current_state_value),torch.diag(price_mu),torch.diag(price_sigma)
 
-            if self.intelligent_worker:
-                current_worker_q_value = self.Worker_Q_training(torch.concat([x1,x2,reservation_value_temp.unsqueeze(-1),price_old_temp.unsqueeze(-1)],dim=-1), x3, order_num_temp)
-                current_worker_q_value = current_worker_q_value[torch.arange(current_worker_q_value.size(0)),worker_action_temp]
-
             td_target_temp = td_target_temp.float()
-
             critic_loss = self.loss_func(current_state_value, td_target_temp)
 
             normal_dist = torch.distributions.Normal(price_mu, price_sigma)
@@ -736,22 +904,13 @@ class Worker():
             surr2 = torch.clamp(ratio,1-self.eps_clip,1+self.eps_clip) * advantage_temp
             actor_loss = torch.mean(-torch.min(surr1, surr2))
 
-            # train platform_net
-            # weight_actor = 1.0
-            # loss = critic_loss + actor_loss * weight_actor
-
-            # if episode % 2 == 0:
-            #     loss = critic_loss
-            # else:
-            #     loss = actor_loss
-
-            if episode % 2 == 0:
-                loss = 2 * actor_loss + critic_loss
-            else:
-                loss = critic_loss
+            loss = actor_rate * (actor_loss + 0.005 * entropy_loss) + critic_loss
 
             self.optim.zero_grad()
             loss.backward()
+
+            if freeze:
+                self.Q_training.feature_freeze()
 
             # if episode > 35:
             #     self.Q_training.feature_freeze()
@@ -763,7 +922,6 @@ class Worker():
             #     # torch.nn.utils.clip_grad_norm_(self.Q_training.parameters(), 1.0)  # avoid gradient explosion
             #     pass
             # # torch.nn.utils.clip_grad_norm_(self.Q_training.parameters(), 1.0)  # avoid gradient explosion
-
 
             has_nan = False
             for name, param in self.Q_training.named_parameters():
@@ -779,49 +937,67 @@ class Worker():
             c_loss.append(critic_loss.item())
             a_loss.append(actor_loss.item())
 
-            if self.intelligent_worker:
-                x1, x2, x3 = norm(new_order_state_next_temp, worker_state_next_temp, order_state_next_temp)
-                # train worker_net
-                next_worker_q_value = self.Worker_Q_target(
-                    torch.concat([x1, x2, reservation_value_temp.unsqueeze(-1), price_next_temp.unsqueeze(-1)], dim=-1), x3,
-                    order_num_next_temp)
-
-                next_worker_q_value_index = torch.max(self.Worker_Q_training(
-                    torch.concat([x1, x2, reservation_value_temp.unsqueeze(-1), price_next_temp.unsqueeze(-1)], dim=-1), x3,
-                    order_num_next_temp).detach(), dim=-1)[1]
-                next_worker_q_value = next_worker_q_value[torch.arange(next_worker_q_value.size(0)), next_worker_q_value_index]
+        self.update_Qtarget()
+        self.schedule.step()
+        return np.mean(c_loss), np.mean(a_loss)
 
 
-                worker_target = worker_reward_temp + self.worker_gamma ** delta_t_temp * next_worker_q_value
-                worker_target = worker_target.float()
 
-                loss = self.loss_func(current_worker_q_value, worker_target)
-                self.optim_worker.zero_grad()
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.Worker_Q_training.parameters(), 1.0)  # avoid gradient explosion
+    def train_critic(self,batch_size=512,train_times=30,freeze=False):
+        c_loss = []
+        a_loss = [0]
 
-                has_nan = False
-                for name, param in self.Worker_Q_training.named_parameters():
-                    if param.grad is not None:
-                        if torch.isnan(param.grad).any():
-                            has_nan = True
-                            break
-                if has_nan:
-                    # print("NAN Gradient->Skip")
-                    continue
+        pbar = tqdm.tqdm(range(train_times))
+        torch.set_grad_enabled(True)
+        self.Q_training.train()
+        self.Q_target.eval()
 
-                self.optim_worker.step()
-                worker_loss.append(loss.item())
+        for _ in pbar:
+            worker_state, order_state, order_num, new_order_state, \
+                price_old, price_log_prob_old, reward, delta_t, \
+                worker_state_next, order_state_next, order_num_next, new_order_state_next, \
+                reservation_value, price_next, worker_action, worker_reward, workload_current, workload_next = self.buffer.sampling(batch_size, self.device)
 
-                self.update_Qtarget()
+            x1, x2, x3 = norm(new_order_state,worker_state,order_state)
+            current_state_value, price_mu, price_sigma = self.Q_training(x1,x2,x3,order_num)
+            current_state_value, price_mu, price_sigma = torch.diag(current_state_value),torch.diag(price_mu),torch.diag(price_sigma)
 
-        if self.intelligent_worker:
-            # self.schedule_worker.step()
-            # self.schedule.step()
-            return np.mean(c_loss), np.mean(a_loss), np.mean(worker_loss)
-        else:
-            # self.schedule.step()
-            return np.mean(c_loss), np.mean(a_loss)
+
+            x1, x2, x3 = norm(new_order_state_next, worker_state_next, order_state_next)
+            next_state_value1, _, _ = self.Q_target(x1, x2, x3, order_num_next)
+            next_state_value2, _, _ = self.Q_training(x1, x2, x3, order_num_next)
+            next_state_value1, next_state_value2 = torch.diag(next_state_value1), torch.diag(next_state_value2)
+            next_state_value = torch.min(next_state_value1, next_state_value2)
+
+            td_target = reward + self.gamma ** delta_t * next_state_value.detach()
+            td_target = td_target.float()
+
+            critic_loss = self.loss_func(current_state_value, td_target)
+
+            loss = critic_loss
+            self.optim.zero_grad()
+            loss.backward()
+            # torch.nn.utils.clip_grad_norm_(self.Q_training.parameters(), 1.0)  # avoid gradient explosion
+            if freeze:
+                self.Q_training.feature_freeze()
+
+            has_nan = False
+            for name, param in self.Q_training.named_parameters():
+                if param.grad is not None:
+                    if torch.isnan(param.grad).any():
+                        has_nan = True
+                        break
+            if has_nan:
+                # print("NAN Gradient->Skip")
+                continue
+
+            self.optim.step()
+            c_loss.append(critic_loss.item())
+
+        self.update_Qtarget()
+        # self.schedule.step()
+        return np.mean(c_loss), np.mean(a_loss)
+
 
 def calculate_advantage(td_delta, delta_t, worker_id, gamma=0.99, lamada=0.95):
     worker_num = torch.max(worker_id) + 1
@@ -953,6 +1129,9 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
     return observe_space, current_orders, current_orders_num, positive_history, negative_history, current_travel_route, current_travel_time, experience, full_experience, finished_order_time, worker_reward
 
 
+def gaussian_entropy(sigma):
+    entropy = 0.5 * torch.log(2 * torch.pi * (sigma ** 2)) + 0.5
+    return torch.mean(entropy)
 
 if __name__ == '__main__':
     # test
@@ -964,6 +1143,3 @@ if __name__ == '__main__':
     plt.plot(range(len(worker.positive_history)),worker.negative_history,'b')
     plt.show()
     # plot_accept_rate()
-
-
-
