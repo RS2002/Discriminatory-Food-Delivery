@@ -117,7 +117,7 @@ def main():
 
     actor_rate = 1.0
     freeze = False
-    critic_episode = 2
+    critic_episode = 3
     current_episode = 0
     checkpoint = [current_episode,exploration_rate]
 
