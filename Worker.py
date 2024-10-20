@@ -1228,6 +1228,9 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
 
 def gaussian_entropy(sigma):
     entropy = 0.5 * torch.log(2 * torch.pi * (sigma ** 2)) + 0.5
+
+    entropy *= -1
+
     return torch.mean(entropy)
 
 if __name__ == '__main__':
