@@ -76,7 +76,10 @@ def main():
                     worker_model_path=args.worker_model_path, njobs=args.njobs, intelligent_worker=intelligent_worker, probability_worker = probability_worker)
     reward_func = reward_func_generator(args.reward_parameter, args.order_threshold)
 
-    Worker_Q_training = None
+    if intelligent_worker:
+        Worker_Q_training = worker.Worker_Q_training
+    else:
+        Worker_Q_training = None
 
     dic_list = []
 

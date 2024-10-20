@@ -106,7 +106,10 @@ def main():
                     worker_model_path=args.worker_model_path, njobs=args.njobs, intelligent_worker=intelligent_worker, probability_worker = probability_worker)
     reward_func = reward_func_generator(args.reward_parameter, args.order_threshold)
 
-    Worker_Q_training = None
+    if intelligent_worker:
+        Worker_Q_training = worker.Worker_Q_training
+    else:
+        Worker_Q_training = None
 
     best_reward = -1e-8
     best_epoch = 0
@@ -153,7 +156,7 @@ def main():
                 demand.pickup(accepted_orders)
                 demand.update()
 
-            c_loss, a_loss = worker.train_critic(args.batch_size, train_times, freeze)
+            c_loss, a_loss, w_loss = worker.train_critic(args.batch_size, train_times, freeze)
         else: # train actor
             current_episode = 0
             exploration_rate_temp = 0
@@ -177,7 +180,7 @@ def main():
                 demand.pickup(accepted_orders)
                 demand.update()
 
-            c_loss, a_loss = worker.train_actor(j, args.batch_size, train_times, actor_rate, freeze)
+            c_loss, a_loss, w_loss = worker.train_actor(j, args.batch_size, train_times, actor_rate, freeze)
             buffer.reset()
 
         total_pickup = platform.PickUp
@@ -191,8 +194,8 @@ def main():
         total_valid_distance = np.sum(platform.valid_distance)
 
 
-        log = "Train Episode {:} , Platform Reward {:} , Worker Reward {:} , Order Pickup {:} , Worker Reject Num {:} , Average Detour {:} , Average Travel Time {:} , Total Timeout Order {:} , Total Valid Distance {:} , Critic Loss {:} , Actor Loss {:}".format(
-            j, total_reward, worker_reward, total_pickup, worker_reject, average_detour, average_travel_time, total_timeout, total_valid_distance, c_loss, a_loss)
+        log = "Train Episode {:} , Platform Reward {:} , Worker Reward {:} , Order Pickup {:} , Worker Reject Num {:} , Average Detour {:} , Average Travel Time {:} , Total Timeout Order {:} , Total Valid Distance {:} , Critic Loss {:} , Actor Loss {:}, Worker Loss {:}".format(
+            j, total_reward, worker_reward, total_pickup, worker_reject, average_detour, average_travel_time, total_timeout, total_valid_distance, c_loss, a_loss, w_loss)
         print(log)
         with open("train.txt", 'a') as file:
             file.write(log+"\n")
