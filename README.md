@@ -1,6 +1,6 @@
 # PDF: PPO+DQN Food-delivery
 
-**Article: ** "Double PDF: A Hybrid Approach Combining PPO and DQN for Multi-action Reinforcement Learning in Food Delivery"
+**Article:** "Double PDF: A Hybrid Approach Combining PPO and DQN for Multi-action Reinforcement Learning in Food Delivery"
 
 Some parts of the code is based on the work of [‪Yulong Hu‬‬](https://scholar.google.com/citations?user=IfVrhp0AAAAJ&hl=zh-CN&oi=ao).
 
