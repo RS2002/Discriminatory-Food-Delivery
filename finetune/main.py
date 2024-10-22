@@ -121,11 +121,11 @@ def main():
 
     actor_rate = 1.0
     freeze = True
-    critic_episode = 3
+    critic_episode = 2
     current_critic_episode = 0
-    actor_episode = 2
+    actor_episode = 3
     current_actor_episode = 0
-    critic_phase = True
+    critic_phase = False
 
     checkpoint = [current_critic_episode,current_actor_episode,critic_phase,exploration_rate]
 
@@ -143,6 +143,7 @@ def main():
             if current_critic_episode == critic_episode:
                 current_critic_episode = 0
                 critic_phase = False
+                worker.schedule.step()
             exploration_rate = max(exploration_rate * epsilon_decay_rate, epsilon_final)
             exploration_rate_temp = exploration_rate
             print("Exploration Rate: ", exploration_rate_temp)
@@ -177,7 +178,7 @@ def main():
 
             exploration_rate_temp = 0
             print("Exploration Rate: ", exploration_rate_temp)
-            train_times = args.train_times
+            train_times = 3 * args.train_times
 
             pbar = tqdm.tqdm(range(args.max_step))
             for t in pbar:
@@ -307,14 +308,21 @@ def main():
                 'neg_history': worker.negative_history,
                 'price_sigma_pos': platform.price_sigma_pos,
                 'price_sigma_neg': platform.price_sigma_neg,
-                'price_error': worker.salary_error,
-                'waiting_time': worker.time_ground_truth,
-                'prediction_time': worker.time_prediction
+                'price_error': worker.salary_error
             }
 
             dic_list.append(dic)
             with open('log.pkl', 'wb') as f:
                 pickle.dump(dic_list, f)
+
+
+            dic = {
+                'waiting_time': worker.time_ground_truth,
+                'prediction_time': worker.time_prediction
+            }
+            with open('time_log.pkl', 'wb') as f:
+                pickle.dump(dic, f)
+
 
             # rollback mechanism
             if args.reward_threshold > 0:

@@ -197,6 +197,7 @@ class Q_Net(nn.Module):
 
         time_prediction_mu = self.attention_time(worker,order)
         time_prediction_mu = self.relu(time_prediction_mu)
+        # time_prediction_mu = self.sigmoid(time_prediction_mu) * 60
         time_prediction_sigma = self.attention_time(worker,order)
         time_prediction_sigma = self.softplus(time_prediction_sigma)
 

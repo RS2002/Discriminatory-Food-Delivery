@@ -999,6 +999,8 @@ class Worker():
                 t_loss.append(time_loss.item())
                 t_mape.append(time_mape.item())
                 t_mse.append(time_mse.item())
+                time_sts = loss_sts(time_prediction, waiting_time_t)
+                time_loss = time_loss + time_mape * 0.005 + time_mse + time_sts
             else:
                 time_loss = 0
 
@@ -1035,7 +1037,8 @@ class Worker():
             surr2 = torch.clamp(ratio,1-self.eps_clip,1+self.eps_clip) * advantage_temp
             actor_loss = torch.mean(-torch.min(surr1, surr2))
 
-            loss = actor_rate * (actor_loss + 0.005 * entropy_loss) + critic_loss + time_loss
+            time_rate = 10.0
+            loss = actor_rate * (actor_loss + 0.005 * entropy_loss) + critic_loss + time_loss * time_rate
 
             self.optim.zero_grad()
             loss.backward()
@@ -1104,9 +1107,8 @@ class Worker():
                 worker_loss.append(loss.item())
 
 
-
         self.update_Qtarget()
-        self.schedule.step()
+        # self.schedule.step()
         if self.intelligent_worker:
             self.schedule_worker.step()
             return np.mean(c_loss), np.mean(a_loss), np.mean(worker_loss), 0, 0
@@ -1145,9 +1147,7 @@ class Worker():
                 t_mse.append(time_mse.item())
                 time_loss = loss_gaussion(waiting_time_t, time_prediction, time_prediction_sigma)
                 t_loss.append(time_loss.item())
-
-                # time_loss = 0
-
+                time_loss = 0
             else:
                 time_loss = 0
 
@@ -1179,7 +1179,8 @@ class Worker():
 
             critic_loss = self.loss_func(current_state_value, td_target)
 
-            loss = critic_loss + time_loss
+            time_rate = 1.0
+            loss = critic_loss + time_loss * time_rate
             self.optim.zero_grad()
             loss.backward()
             # torch.nn.utils.clip_grad_norm_(self.Q_training.parameters(), 1.0)  # avoid gradient explosion
@@ -1454,12 +1455,21 @@ def gaussian_entropy(sigma):
     return torch.mean(entropy)
 
 def loss_mape(y_hat, y, epsilon = 1e-5):
+    # epsilon = (y == 0).float()
     loss = torch.abs(y_hat - y) / (torch.abs(y) +epsilon)
     return torch.mean(loss)
 
 def loss_gaussion(y, mu, sigma):
     loss = torch.log(sigma) + (y-mu)**2/(2*sigma**2)
     return torch.mean(loss)
+
+def loss_sts(y_hat, y):
+    avg_hat = torch.mean(y_hat)
+    avg = torch.mean(y)
+    std_hat = torch.std(y_hat)
+    std = torch.std(y)
+    loss = (avg - avg_hat) ** 2 + (std - std_hat) ** 2
+    return loss
 
 if __name__ == '__main__':
     # test
