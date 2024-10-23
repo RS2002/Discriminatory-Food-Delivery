@@ -57,26 +57,49 @@ def get_args():
     return args
 
 
-def group_generation_func(worker_num, mode = 2):
+def group_generation_func(worker_num, mode=2):
     match mode:
         case 1:
             return group_generation_func1(worker_num)
         case 2:
             return group_generation_func2(worker_num)
+        case 3:
+            return group_generation_func3(worker_num)
+        case 4:
+            return group_generation_func4(worker_num)
+
 
 def group_generation_func1(worker_num):
     reservation_value = np.random.uniform(0.85, 1.15, worker_num)
     speed = np.random.uniform(0.85, 1.15, worker_num)
-    capacity = np.random.randint(2, 5, size=1000) # 2,3,4
+    capacity = np.random.randint(2, 5, size=1000)  # 2,3,4
     group = None
     return reservation_value, speed, capacity, group
 
+
 def group_generation_func2(worker_num):
     reservation_value = np.random.uniform(0.85, 1.15, worker_num)
-    speed = np.array([1.0]*worker_num)
-    capacity = np.array([3.0]*worker_num)
+    speed = np.array([1.0] * worker_num)
+    capacity = np.array([3.0] * worker_num)
     group = None
     return reservation_value, speed, capacity, group
+
+
+def group_generation_func3(worker_num):
+    reservation_value = np.array([1.0] * worker_num)
+    speed = np.random.uniform(0.85, 1.15, worker_num)
+    capacity = np.array([3.0] * worker_num)
+    group = None
+    return reservation_value, speed, capacity, group
+
+
+def group_generation_func4(worker_num):
+    reservation_value = np.array([1.0] * worker_num)
+    speed = np.array([1.0] * worker_num)
+    capacity = np.random.randint(2, 5, size=1000)  # 2,3,4
+    group = None
+    return reservation_value, speed, capacity, group
+
 
 def main():
     args = get_args()
