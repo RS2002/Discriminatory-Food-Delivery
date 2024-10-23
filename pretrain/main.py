@@ -29,7 +29,7 @@ def get_args():
 
     parser.add_argument("--bilstm", action="store_true",default=False)
     parser.add_argument('--dropout', type=float, default=0.0)
-    parser.add_argument('--worker_mode', type=int, default=2)
+    parser.add_argument('--mode', type=int, default=2)
 
     parser.add_argument('--epsilon', type=float, default=1.0)
     parser.add_argument('--epsilon_decay_rate', type=float, default=0.99)
