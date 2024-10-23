@@ -27,6 +27,10 @@ def get_args():
     parser.add_argument('--reward_parameter', type=float, nargs='+', default=[3.0,5.0,4.0,3.0,1.0,5.0,0.0])
     parser.add_argument('--reject_punishment', type=float, default=0.0)
 
+    parser.add_argument("--bilstm", action="store_true",default=False)
+    parser.add_argument('--dropout', type=float, default=0.0)
+    parser.add_argument('--worker_mode', type=int, default=2)
+
     parser.add_argument('--epsilon', type=float, default=0.3)
     parser.add_argument('--epsilon_decay_rate', type=float, default=0.99)
     parser.add_argument('--epsilon_final', type=float, default=0.0005)
@@ -53,30 +57,19 @@ def get_args():
     return args
 
 
-# def group_generation_func1(worker_num):
-#     one_group_worker = worker_num // 2
-#
-#     group = [0]*one_group_worker
-#     group.extend([1]*one_group_worker)
-#     group = np.array(group)
-#     capacity = np.array([3.0]*worker_num)
-#
-#     # reservation_value_0 = np.random.normal(loc=0.95, scale=0.01, size=one_group_worker)
-#     # reservation_value_1 = np.random.normal(loc=0.98, scale=0.01, size=one_group_worker)
-#     # reservation_value = np.concatenate([reservation_value_0,reservation_value_1])
-#     # reservation_value[reservation_value<0.9]=0.9
-#
-#     reservation_value_0 = np.random.normal(loc=0.9, scale=0.05, size=one_group_worker)
-#     reservation_value_1 = np.random.normal(loc=1.1, scale=0.05, size=one_group_worker)
-#     reservation_value = np.concatenate([reservation_value_0,reservation_value_1],axis=0)
-#     reservation_value[reservation_value<0.5]=0.5
-#
-#     speed_0 = np.random.normal(loc=0.98, scale=0.01, size=one_group_worker)
-#     speed_1 = np.random.normal(loc=1.00, scale=0.01, size=one_group_worker)
-#     speed = np.concatenate([speed_0,speed_1],axis=0)
-#     speed[speed<0.9]=0.9
-#
-#     return reservation_value, speed, capacity, group
+def group_generation_func(worker_num, mode = 2):
+    match mode:
+        case 1:
+            return group_generation_func1(worker_num)
+        case 2:
+            return group_generation_func2(worker_num)
+
+def group_generation_func1(worker_num):
+    reservation_value = np.random.uniform(0.85, 1.15, worker_num)
+    speed = np.random.uniform(0.85, 1.15, worker_num)
+    capacity = np.random.randint(2, 5, size=1000) # 2,3,4
+    group = None
+    return reservation_value, speed, capacity, group
 
 def group_generation_func2(worker_num):
     reservation_value = np.random.uniform(0.85, 1.15, worker_num)
@@ -84,7 +77,6 @@ def group_generation_func2(worker_num):
     capacity = np.array([3.0]*worker_num)
     group = None
     return reservation_value, speed, capacity, group
-
 
 def main():
     args = get_args()
@@ -104,7 +96,7 @@ def main():
     worker = Worker(buffer=buffer, time_buffer=time_buffer, lr=args.lr, gamma=args.gamma, eps_clip=args.eps_clip, max_step=args.max_step,
                     num=args.worker_num,
                     device=device, zone_table_path=args.zone_table_path, model_path=args.platform_model_path,
-                    worker_model_path=args.worker_model_path, njobs=args.njobs, intelligent_worker=intelligent_worker, probability_worker = probability_worker)
+                    worker_model_path=args.worker_model_path, njobs=args.njobs, intelligent_worker=intelligent_worker, probability_worker = probability_worker, bilstm = args.bilstm, dropout = args.dropout)
     reward_func = reward_func_generator(args.reward_parameter, args.order_threshold)
 
     if intelligent_worker:
@@ -132,7 +124,7 @@ def main():
     while True:
         j += 1
 
-        reservation_value, speed, capacity, group = group_generation_func2(args.worker_num)
+        reservation_value, speed, capacity, group = group_generation_func(args.worker_num, args.mode)
         worker.reset(max_step=args.max_step, num= args.worker_num, reservation_value=reservation_value, speed=speed, capacity=capacity, group=group, train=True)
         platform.reset(discount_factor = args.gamma)
         demand.reset(episode_time=0, p_sample=args.demand_sample_rate, wait_time=args.order_max_wait_time)
@@ -235,7 +227,7 @@ def main():
 
 
         if j % args.eval_episode == 0:
-            reservation_value, speed, capacity, group = group_generation_func2(args.worker_num)
+            reservation_value, speed, capacity, group = group_generation_func(args.worker_num, args.mode)
             worker.reset(max_step=args.max_step, num=args.worker_num, reservation_value=reservation_value, speed=speed,
                          capacity=capacity, group=group, train=False)
             platform.reset(discount_factor=args.gamma)
@@ -298,6 +290,8 @@ def main():
             dic = {
                 'episode': j,
                 'reservation_value': reservation_value,
+                'speed': speed,
+                'capacity': capacity,
                 'worker_reward': worker.worker_reward,
                 'price': worker.price,
                 'work_load': worker.work_load,

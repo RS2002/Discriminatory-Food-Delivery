@@ -336,7 +336,7 @@ reservation_value/speed: 1.0 as baseline
 capacity: the maximum order number of each worker
 '''
 class Worker():
-    def __init__(self, buffer, time_buffer, lr=0.0001, gamma=0.99, eps_clip=0.2, max_step=60, history_num=5, num=1000, reservation_value=None, speed=None, capacity=None, group=None, device=None, zone_table_path = "../data/zone_table.csv", model_path = None,  worker_model_path = None, njobs = 24, intelligent_worker = False, probability_worker = False):
+    def __init__(self, buffer, time_buffer, lr=0.0001, gamma=0.99, eps_clip=0.2, max_step=60, history_num=5, num=1000, reservation_value=None, speed=None, capacity=None, group=None, device=None, zone_table_path = "../data/zone_table.csv", model_path = None,  worker_model_path = None, njobs = 24, intelligent_worker = False, probability_worker = False, bilstm = False, dropout = 0.0):
         super().__init__()
         self.intelligent_worker = intelligent_worker
         self.probability_worker = probability_worker
@@ -357,8 +357,8 @@ class Worker():
         self.zone_lookup = pd.read_csv(zone_table_path)
         self.coordinate_lookup = np.array(self.zone_lookup[['lat','lon']])
 
-        self.Q_training = Q_Net(state_size=8, history_order_size=5, current_order_size=5, hidden_dim=64, head=1, bi_direction=False, dropout=0.0).to(device)
-        self.Q_target = Q_Net(state_size=8, history_order_size=5, current_order_size=5, hidden_dim=64, head=1, bi_direction=False, dropout=0.0).to(device)
+        self.Q_training = Q_Net(state_size=8, history_order_size=5, current_order_size=5, hidden_dim=64, head=1, bi_direction=bilstm, dropout=dropout).to(device)
+        self.Q_target = Q_Net(state_size=8, history_order_size=5, current_order_size=5, hidden_dim=64, head=1, bi_direction=bilstm, dropout=dropout).to(device)
         # if model_path is not None:
         #     self.Q_target.load_state_dict(torch.load(model_path))
         #     self.Q_training.load_state_dict(torch.load(model_path))
@@ -367,8 +367,8 @@ class Worker():
         #     self.Q_training.load_state_dict(torch.load(model_path,map_location=torch.device('cpu')))
 
         if self.intelligent_worker:
-            self.Worker_Q_training = Worker_Q_Net(input_size=15, history_order_size=5, output_dim=2, bi_direction=False, dropout=0.0).to(device)
-            self.Worker_Q_target = Worker_Q_Net(input_size=15, history_order_size=5, output_dim=2, bi_direction=False, dropout=0.0).to(device)
+            self.Worker_Q_training = Worker_Q_Net(input_size=15, history_order_size=5, output_dim=2, bi_direction=bilstm, dropout=dropout).to(device)
+            self.Worker_Q_target = Worker_Q_Net(input_size=15, history_order_size=5, output_dim=2, bi_direction=bilstm, dropout=dropout).to(device)
             # if worker_model_path is not None:
             #     self.Worker_Q_training.load_state_dict(torch.load(worker_model_path))
             #     self.Worker_Q_target.load_state_dict(torch.load(worker_model_path))
