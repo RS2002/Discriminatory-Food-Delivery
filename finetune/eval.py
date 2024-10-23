@@ -1,4 +1,4 @@
-from Worker import Buffer, Worker
+from Worker import Buffer, Worker, Time_Buffer
 from Centeral_Platform import Platform, reward_func_generator
 from Order_Env import Demand
 import argparse
@@ -12,7 +12,7 @@ def get_args():
     parser = argparse.ArgumentParser(description='')
 
     parser.add_argument('--batch_size', type=int, default=512)
-    parser.add_argument('--lr', type=float, default=0.0005)
+    parser.add_argument('--lr', type=float, default=0.0001)
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--eps_clip', type=float, default=0.2)
     parser.add_argument('--max_step', type=int, default=60)
@@ -57,14 +57,14 @@ def main():
     intelligent_worker = args.intelligent_worker
     probability_worker = args.probability_worker
 
-    platform = Platform(discount_factor=args.gamma, njobs=args.njobs, probability_worker=probability_worker)
-    demand = Demand(demand_path=args.demand_path)
-    buffer = Buffer(capacity=args.buffer_capacity)
-    worker = Worker(buffer=buffer, lr=args.lr, gamma=args.gamma, eps_clip=args.eps_clip, max_step=args.max_step,
+    platform = Platform(discount_factor = args.gamma, njobs = args.njobs, probability_worker = probability_worker)
+    demand = Demand(demand_path = args.demand_path)
+    buffer = Buffer(capacity = args.buffer_capacity)
+    time_buffer = Time_Buffer(capacity = args.buffer_capacity)
+    worker = Worker(buffer=buffer, time_buffer=time_buffer, lr=args.lr, gamma=args.gamma, eps_clip=args.eps_clip, max_step=args.max_step,
                     num=args.worker_num,
                     device=device, zone_table_path=args.zone_table_path, model_path=args.platform_model_path,
-                    worker_model_path=args.worker_model_path, njobs=args.njobs, intelligent_worker=intelligent_worker,
-                    probability_worker=probability_worker, bilstm=args.bilstm, dropout=args.dropout)
+                    worker_model_path=args.worker_model_path, njobs=args.njobs, intelligent_worker=intelligent_worker, probability_worker = probability_worker, bilstm = args.bilstm, dropout = args.dropout)
     reward_func = reward_func_generator(args.reward_parameter, args.order_threshold)
 
     if intelligent_worker:
@@ -73,6 +73,7 @@ def main():
         Worker_Q_training = None
 
     dic_list = []
+    time_dic_list = []
 
     for j in range(args.test_times):
         reservation_value, speed, capacity, group = group_generation_func(args.worker_num, args.mode)
@@ -82,15 +83,16 @@ def main():
         demand.reset(episode_time=0, p_sample=args.demand_sample_rate, wait_time=args.order_max_wait_time)
         pbar = tqdm.tqdm(range(args.max_step))
         for t in pbar:
-            q_value, price_mu, price_sigma, order_state, worker_state = worker.observe(demand.current_demand, t,
-                                                                                       0)
+            q_value, price_mu, price_sigma, order_state, worker_state, time_prediction = worker.observe(
+                demand.current_demand, t,
+                0)
             assignment, _ = platform.assign(q_value)
             feedback_table, new_route_table, new_route_time_table, new_remaining_time_table, new_total_travel_time_table, accepted_orders, worker_feed_back_table = platform.feedback(
                 worker.observe_space, worker.reservation_value, worker.speed, worker.current_orders,
                 worker.current_order_num,
                 assignment, order_state, price_mu, price_sigma, reward_func, args.reject_punishment,
                 args.order_threshold, t,
-                Worker_Q_training, 0, args.worker_reject_punishment, device, worker_state
+                Worker_Q_training, 0, args.worker_reject_punishment, device, worker_state, time_prediction
             )
             worker.update(feedback_table, new_route_table, new_route_time_table, new_remaining_time_table,
                           new_total_travel_time_table, worker_feed_back_table, t, (t == args.max_step - 1), j)
@@ -106,9 +108,18 @@ def main():
         average_detour = np.mean(np.array(platform.workload) - np.array(platform.direct_time))
         total_valid_distance = np.sum(platform.valid_distance)
 
-        log = "Eval Episode {:} , Platform Reward {:} , Worker Reward {:} , Order Pickup {:} , Worker Reject Num {:} , Average Detour {:} , Average Travel Time {:} , Total Timeout Order {:} , Total Valid Distance {:}".format(
+        if Worker_Q_training is None:
+            t_loss, t_mse, t_mape = worker.eval_time_prediction(args.batch_size, args.train_times)
+        else:
+            t_loss, t_mse, t_mape = 0, 0, 0
+        time_buffer.reset()
+
+        salary_mape = np.mean(
+            np.abs(worker.salary_error) / (np.abs(np.array(worker.salary) + np.array(worker.salary_error)) + 1e-5))
+
+        log = "Eval Episode {:} , Platform Reward {:} , Worker Reward {:} , Order Pickup {:} , Worker Reject Num {:} , Average Detour {:} , Average Travel Time {:} , Total Timeout Order {:} , Total Valid Distance {:} , Time Loss {:} , Time MSE {:} , Time MAPE {:} , Salary MAPE {:}".format(
             j, total_reward, worker_reward, total_pickup, worker_reject, average_detour, average_travel_time,
-            total_timeout, total_valid_distance
+            total_timeout, total_valid_distance, t_loss, t_mse, t_mape, salary_mape
         )
         print(log)
         with open("eval_pure.txt", 'a') as file:
@@ -143,9 +154,18 @@ def main():
             'pos_history': worker.positive_history,
             'neg_history': worker.negative_history,
             'price_sigma_pos': platform.price_sigma_pos,
-            'price_sigma_neg': platform.price_sigma_neg
+            'price_sigma_neg': platform.price_sigma_neg,
+            'price_error': worker.salary_error
         }
 
         dic_list.append(dic)
         with open('log_eval.pkl', 'wb') as f:
             pickle.dump(dic_list, f)
+
+        dic = {
+            'waiting_time': worker.time_ground_truth,
+            'prediction_time': worker.time_prediction
+        }
+        time_dic_list.append(dic)
+        with open('time_log_eval.pkl', 'wb') as f:
+            pickle.dump(time_dic_list, f)
