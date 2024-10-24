@@ -896,8 +896,8 @@ class Worker():
             x1, x2, x3 = norm(new_order_state_temp,worker_state_temp,order_state_temp)
             current_state_value, price_mu, price_sigma = self.Q_training(x1,x2,x3,order_num_temp)
             # sigma_mean = torch.mean(price_sigma)
-            entropy_loss = gaussian_entropy(price_sigma)
-            # entropy_loss = 0
+            # entropy_loss = gaussian_entropy(price_sigma)
+            entropy_loss = 0
             current_state_value, price_mu, price_sigma = torch.diag(current_state_value),torch.diag(price_mu),torch.diag(price_sigma)
 
             if self.intelligent_worker:
@@ -985,7 +985,7 @@ class Worker():
 
 
         self.update_Qtarget()
-        self.schedule.step()
+        # self.schedule.step()
         if self.intelligent_worker:
             self.schedule_worker.step()
         return np.mean(c_loss), np.mean(a_loss), np.mean(worker_loss)
@@ -1228,9 +1228,7 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
 
 def gaussian_entropy(sigma):
     entropy = 0.5 * torch.log(2 * torch.pi * (sigma ** 2)) + 0.5
-
     entropy *= -1
-
     return torch.mean(entropy)
 
 if __name__ == '__main__':

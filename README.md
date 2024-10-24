@@ -1,6 +1,8 @@
 # PDF: PPO+DQN Food-delivery
 
-**Article:** "Double PDF: A Hybrid Approach Combining PPO and DQN for Multi-action Reinforcement Learning in Food Delivery"
+**Article:** "Double PDF: A Multi-action and Multi-agent Reinforcement Learning Framework for Order Assignment and Salary Decision in Food Delivery"
+
+
 
 Some parts of the code is based on the work of [‪Yulong Hu‬‬](https://scholar.google.com/citations?user=IfVrhp0AAAAJ&hl=zh-CN&oi=ao).
 
@@ -20,13 +22,11 @@ Some parts of the code is based on the work of [‪Yulong Hu‬‬](https://scho
 
 
 
-**File Relationship:**
-
-
-
 
 
 ## 2. Dataset 
+
+Due to the copyright, we cannot provide the data used in this paper. But we provide a brief introduction of the format of our data, so that you can use our code in your own dataset.
 
 
 
@@ -34,11 +34,21 @@ Some parts of the code is based on the work of [‪Yulong Hu‬‬](https://scho
 
 ## 3. How to Run
 
-### 3.1 Train
+### 3.0 Prepare
 
 
 
-### 3.2 Eval
+
+
+### 3.1 Pretrain
+
+
+
+### 3.2 Finetune
+
+
+
+### 3.3 Eval
 
 
 
@@ -46,5 +56,7 @@ Some parts of the code is based on the work of [‪Yulong Hu‬‬](https://scho
 
 ## 4. Citation
 
+```
 
+```
 

@@ -63,10 +63,6 @@ def group_generation_func(worker_num, mode = 2):
             return group_generation_func1(worker_num)
         case 2:
             return group_generation_func2(worker_num)
-        case 3:
-            return group_generation_func3(worker_num)
-        case 4:
-            return group_generation_func4(worker_num)
 
 def group_generation_func1(worker_num):
     reservation_value = np.random.uniform(0.85, 1.15, worker_num)
@@ -79,20 +75,6 @@ def group_generation_func2(worker_num):
     reservation_value = np.random.uniform(0.85, 1.15, worker_num)
     speed = np.array([1.0]*worker_num)
     capacity = np.array([3.0]*worker_num)
-    group = None
-    return reservation_value, speed, capacity, group
-
-def group_generation_func3(worker_num):
-    reservation_value = np.array([1.0]*worker_num)
-    speed = np.random.uniform(0.85, 1.15, worker_num)
-    capacity = np.array([3.0]*worker_num)
-    group = None
-    return reservation_value, speed, capacity, group
-
-def group_generation_func4(worker_num):
-    reservation_value = np.array([1.0]*worker_num)
-    speed = np.array([1.0]*worker_num)
-    capacity = np.random.randint(2, 5, size=1000) # 2,3,4
     group = None
     return reservation_value, speed, capacity, group
 
@@ -132,8 +114,12 @@ def main():
     actor_rate = 1.0
     freeze = False
     critic_episode = 3
-    current_episode = 0
-    checkpoint = [current_episode,exploration_rate]
+    current_critic_episode = 0
+    actor_episode = 2
+    current_actor_episode = 0
+    critic_phase = True
+
+    checkpoint = [current_critic_episode,current_actor_episode,critic_phase,exploration_rate]
 
     while True:
         j += 1
@@ -143,8 +129,14 @@ def main():
         platform.reset(discount_factor = args.gamma)
         demand.reset(episode_time=0, p_sample=args.demand_sample_rate, wait_time=args.order_max_wait_time)
 
-        if current_episode < critic_episode: # train critic
-            current_episode += 1
+        if critic_phase:  # train critic
+            if current_critic_episode < critic_episode:
+                current_critic_episode += 1
+            if current_critic_episode == critic_episode:
+                current_critic_episode = 0
+                critic_phase = False
+                worker.schedule.step()
+
             exploration_rate = max(exploration_rate * epsilon_decay_rate, epsilon_final)
             exploration_rate_temp = exploration_rate
             print("Exploration Rate: ", exploration_rate_temp)
@@ -168,7 +160,13 @@ def main():
                 demand.update()
 
             c_loss, a_loss, w_loss = worker.train_critic(args.batch_size, train_times, freeze)
-        else: # train actor
+        else:  # train actor
+            buffer.reset()
+            if current_actor_episode < actor_episode:
+                current_actor_episode += 1
+            if current_actor_episode == actor_episode:
+                critic_phase = True
+                current_actor_episode = 0
             current_episode = 0
             exploration_rate_temp = 0
             print("Exploration Rate: ", exploration_rate_temp)
@@ -302,18 +300,17 @@ def main():
 
             # rollback mechanism
             if args.reward_threshold > 0:
-                if checkpoint[0] + 1 + critic_episode <= args.eval_episode and best_reward - total_reward >= args.reward_threshold:
+                if checkpoint[0] + actor_episode + critic_episode <= args.eval_episode and best_reward - total_reward >= args.reward_threshold:
                     worker.load("platform_latest.pth", "worker_latest.pth", device)
                     print("\n Rollback \n")
-                    if freeze == False: # first rollback
+                    if freeze == False:  # first rollback
                         actor_rate *= 0.1
                         freeze = True
                     critic_episode += 1
-                    current_episode = checkpoint[0]
-                    exploration_rate = checkpoint[1]
+                    current_critic_episode, current_actor_episode, critic_phase, exploration_rate = checkpoint
                 else:
                     worker.save("platform_latest.pth", "worker_latest.pth")
-                    checkpoint = [current_episode, exploration_rate]
+                    checkpoint = [current_critic_episode, current_actor_episode, critic_phase, exploration_rate]
 
                     if total_reward > best_reward:
                         best_epoch = 0
