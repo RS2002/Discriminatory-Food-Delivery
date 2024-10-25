@@ -44,7 +44,7 @@ To run our code your own dataset, you need to do some extra setting:
 ### 3.1 Pretrain
 
 ```shell
-python main.py
+python main.py --probability_worker --bilstm --mode <1~4> --train_times <train epoches after each episode> --reward_threshold <threshold to detect collapse> 
 ```
 
 
