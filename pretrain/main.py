@@ -16,7 +16,6 @@ def get_args():
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--eps_clip', type=float, default=0.2)
     parser.add_argument('--max_step', type=int, default=60)
-    parser.add_argument('--eval_episode', type=int, default=10)
     parser.add_argument('--converge_epoch', type=int, default=10)
     parser.add_argument('--minimum_episode', type=int, default=500)
     parser.add_argument('--worker_num', type=int, default=1000)
@@ -30,6 +29,14 @@ def get_args():
     parser.add_argument("--bilstm", action="store_true",default=False)
     parser.add_argument('--dropout', type=float, default=0.0)
     parser.add_argument('--mode', type=int, default=2)
+
+
+    parser.add_argument('--eval_episode', type=int, default=10)
+    parser.add_argument('--critic_episode', type=int, default=4)
+    parser.add_argument('--actor_episode', type=int, default=1)
+    parser.add_argument('--freeze_episode', type=int, default=50)
+    parser.add_argument("--freeze", action="store_true",default=False)
+
 
     parser.add_argument('--epsilon', type=float, default=1.0)
     parser.add_argument('--epsilon_decay_rate', type=float, default=0.99)
@@ -112,10 +119,10 @@ def main():
     exploration_rate = max(exploration_rate * (epsilon_decay_rate**j), epsilon_final)
 
     actor_rate = 1.0
-    freeze = False
-    critic_episode = 3
+    freeze = args.freeze
+    critic_episode = args.critic_episode
     current_critic_episode = 0
-    actor_episode = 2
+    actor_episode = args.actor_episode
     current_actor_episode = 0
     critic_phase = True
 
@@ -167,7 +174,6 @@ def main():
             if current_actor_episode == actor_episode:
                 critic_phase = True
                 current_actor_episode = 0
-            current_episode = 0
             exploration_rate_temp = 0
             print("Exploration Rate: ", exploration_rate_temp)
             train_times = args.train_times
@@ -340,7 +346,7 @@ def main():
                     if best_epoch >= args.converge_epoch:
                         break
 
-        if j == 50:
+        if j == args.freeze_episode:
             freeze = True
 
 # def main_old():

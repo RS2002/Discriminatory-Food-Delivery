@@ -16,7 +16,6 @@ def get_args():
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--eps_clip', type=float, default=0.2)
     parser.add_argument('--max_step', type=int, default=60)
-    parser.add_argument('--eval_episode', type=int, default=10)
     parser.add_argument('--converge_epoch', type=int, default=10)
     parser.add_argument('--minimum_episode', type=int, default=200)
     parser.add_argument('--worker_num', type=int, default=1000)
@@ -29,7 +28,13 @@ def get_args():
 
     parser.add_argument("--bilstm", action="store_true",default=False)
     parser.add_argument('--dropout', type=float, default=0.0)
-    parser.add_argument('--mode', type=int, default=2)
+    parser.add_argument('--worker_mode', type=int, default=2)
+
+    parser.add_argument('--eval_episode', type=int, default=10)
+    parser.add_argument('--critic_episode', type=int, default=3)
+    parser.add_argument('--actor_episode', type=int, default=2)
+    parser.add_argument('--freeze_episode', type=int, default=50)
+    parser.add_argument("--freeze", action="store_true",default=False)
 
     parser.add_argument('--epsilon', type=float, default=0.3)
     parser.add_argument('--epsilon_decay_rate', type=float, default=0.99)
@@ -57,49 +62,26 @@ def get_args():
     return args
 
 
-def group_generation_func(worker_num, mode=2):
+def group_generation_func(worker_num, mode = 2):
     match mode:
         case 1:
             return group_generation_func1(worker_num)
         case 2:
             return group_generation_func2(worker_num)
-        case 3:
-            return group_generation_func3(worker_num)
-        case 4:
-            return group_generation_func4(worker_num)
-
 
 def group_generation_func1(worker_num):
     reservation_value = np.random.uniform(0.85, 1.15, worker_num)
     speed = np.random.uniform(0.85, 1.15, worker_num)
-    capacity = np.random.randint(2, 5, size=1000)  # 2,3,4
+    capacity = np.random.randint(2, 5, size=1000) # 2,3,4
     group = None
     return reservation_value, speed, capacity, group
-
 
 def group_generation_func2(worker_num):
     reservation_value = np.random.uniform(0.85, 1.15, worker_num)
-    speed = np.array([1.0] * worker_num)
-    capacity = np.array([3.0] * worker_num)
+    speed = np.array([1.0]*worker_num)
+    capacity = np.array([3.0]*worker_num)
     group = None
     return reservation_value, speed, capacity, group
-
-
-def group_generation_func3(worker_num):
-    reservation_value = np.array([1.0] * worker_num)
-    speed = np.random.uniform(0.85, 1.15, worker_num)
-    capacity = np.array([3.0] * worker_num)
-    group = None
-    return reservation_value, speed, capacity, group
-
-
-def group_generation_func4(worker_num):
-    reservation_value = np.array([1.0] * worker_num)
-    speed = np.array([1.0] * worker_num)
-    capacity = np.random.randint(2, 5, size=1000)  # 2,3,4
-    group = None
-    return reservation_value, speed, capacity, group
-
 
 def main():
     args = get_args()
@@ -136,9 +118,9 @@ def main():
 
     actor_rate = 1.0
     freeze = True
-    critic_episode = 2
+    critic_episode = args.critic_episode
     current_critic_episode = 0
-    actor_episode = 3
+    actor_episode = args.actor_episode
     current_actor_episode = 0
     critic_phase = False
 
