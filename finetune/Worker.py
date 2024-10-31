@@ -1174,7 +1174,8 @@ class Worker():
             next_state_value1, next_state_value2 = torch.diag(next_state_value1), torch.diag(next_state_value2)
             next_state_value = torch.min(next_state_value1, next_state_value2)
 
-            td_target = reward + self.gamma ** delta_t * next_state_value.detach()
+            is_done = (delta_t == -1).float()
+            td_target = reward + self.gamma ** delta_t * next_state_value.detach() * (1 - is_done)
             td_target = td_target.float()
 
             critic_loss = self.loss_func(current_state_value, td_target)
