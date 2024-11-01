@@ -330,7 +330,7 @@ class Worker():
             self.optim_worker = torch.optim.Adam(self.Worker_Q_training.parameters(), lr=lr, weight_decay=0.00)
             self.schedule_worker = torch.optim.lr_scheduler.ExponentialLR(self.optim_worker, gamma=0.99)
 
-        self.update_Qtarget(tau=0.0)
+        self.update_Qtarget(tau=1.0)
 
 
         # self.optim = torch.optim.Adam(self.Q_training.parameters(), lr=lr, weight_decay=0.01)
