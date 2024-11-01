@@ -1,4 +1,4 @@
-# PDF: PPO+DQN Food-delivery
+# Double PDF
 
 **Article:** "Double PDF: A Multi-action and Multi-agent Reinforcement Learning Framework for Order Dispatch and Salary Decision in Food Delivery" (under way)
 

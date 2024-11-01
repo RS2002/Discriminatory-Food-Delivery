@@ -4,7 +4,11 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import folium
 
-
+session = requests.Session()
+retry = Retry(connect=500000000000000000, backoff_factor=0.2)
+adapter = HTTPAdapter(max_retries=retry)
+session.mount('http://', adapter)
+session.mount('https://', adapter)
 
 # docker run -t -i -p 5000:5000 -v "${PWD}:/data" ghcr.io/project-osrm/osrm-backend osrm-routed --algorithm mld /data/new-york-latest.osrm
 
@@ -19,11 +23,11 @@ def TSP_route(origin_point, destination_points):
             url += str(destination_points[i][1]) + "," + str(
                 destination_points[i][0]) + "?roundtrip=false&source=first&annotations=true&geometries=geojson&overview=full"
 
-    session = requests.Session()
-    retry = Retry(connect=500000000000000000, backoff_factor=0.2)
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount('http://', adapter)
-    session.mount('https://', adapter)
+    # session = requests.Session()
+    # retry = Retry(connect=500000000000000000, backoff_factor=0.2)
+    # adapter = HTTPAdapter(max_retries=retry)
+    # session.mount('http://', adapter)
+    # session.mount('https://', adapter)
 
     r = session.get(url)
     res = r.json()

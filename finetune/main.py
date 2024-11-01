@@ -31,8 +31,8 @@ def get_args():
     parser.add_argument('--worker_mode', type=int, default=2)
 
     parser.add_argument('--eval_episode', type=int, default=10)
-    parser.add_argument('--critic_episode', type=int, default=3)
-    parser.add_argument('--actor_episode', type=int, default=2)
+    parser.add_argument('--critic_episode', type=int, default=4)
+    parser.add_argument('--actor_episode', type=int, default=1)
     parser.add_argument('--freeze_episode', type=int, default=50)
     parser.add_argument("--freeze", action="store_true",default=False)
 
