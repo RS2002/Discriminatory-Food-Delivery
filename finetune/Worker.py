@@ -1390,10 +1390,11 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
 
             current_travel_route, current_travel_time = new_route ,new_route_time
 
-            if current_orders_num>0:
-                current_orders[:current_orders_num,2], current_orders[:current_orders_num,3] = new_remaining_time[1:], new_total_travel_time[1:] # remaining travel time & total travel time (old orders)
-            # print(new_remaining_time,new_total_travel_time,observe_space[4])
-            current_orders[current_orders_num,2], current_orders[current_orders_num,3] = new_remaining_time[0], new_total_travel_time[0] # remaining travel time & total travel time (new orders)
+            # if current_orders_num>0:
+            #     current_orders[:current_orders_num,2], current_orders[:current_orders_num,3] = new_remaining_time[1:], new_total_travel_time[1:] # remaining travel time & total travel time (old orders)
+            # # print(new_remaining_time,new_total_travel_time,observe_space[4])
+            # current_orders[current_orders_num,2], current_orders[current_orders_num,3] = new_remaining_time[0], new_total_travel_time[0] # remaining travel time & total travel time (new orders)
+            current_orders[:current_orders_num+1, 2], current_orders[:current_orders_num+1, 3] = new_remaining_time, new_total_travel_time
             current_orders[current_orders_num, 0], current_orders[current_orders_num, 1] = feedback[0][-2][2], feedback[0][-2][3] # dlat,dlon (new orders)
             current_orders[current_orders_num, 4] = feedback[1][0]
             current_orders_num += 1
