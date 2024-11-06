@@ -28,14 +28,13 @@ def plot_accept_rate():
 
     # 绘制图像
     plt.figure(figsize=(10, 6))
-    plt.plot(x_values, y_values, label=r'$f(x) = \frac{1}{1 + e^{-50(x - 0.95)}}$', color='blue')
+    plt.plot(x_values, y_values, color='blue')
     plt.title('Function Plot of $f(x)$')
     plt.xlabel('x')
     plt.ylabel('f(x)')
     plt.ylim(-0.1, 1.1)
     plt.axhline(0, color='grey', lw=0.5)
     plt.axvline(0, color='grey', lw=0.5)
-    plt.legend()
     plt.grid()
     plt.show()
 
