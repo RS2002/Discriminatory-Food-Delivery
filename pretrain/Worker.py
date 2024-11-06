@@ -503,7 +503,7 @@ class Worker():
             self.worker_reward[i] += self.worker_gamma ** current_time * results[i][10]
 
         # take the ending into consideration
-        if final_step:
+        if final_step and self.is_train:
             for i in range(self.num):
                 if len(self.experience[i])>0:
                     self.experience[i].append(-1) # △t: -1 represents done
