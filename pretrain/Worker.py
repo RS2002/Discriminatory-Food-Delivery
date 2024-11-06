@@ -15,28 +15,26 @@ INF = 1e8
 
 # imitate the accept rate
 def accept_rate(price=1.0,reservation_value=1.0):
-    ratio = price / reservation_value
-    return 1/(1+math.exp(-50*(ratio-0.95)))
+    return 1/(1+math.exp(-50*(price-reservation_value+0.05)))
 
 def plot_accept_rate():
     import matplotlib.pyplot as plt
 
-    def f(x):
-        return 1 / (1 + np.exp(-50 * (x - 0.95)))
+    def f(x,r=1.0):
+        return 1/(1+np.exp(-50*(x-r+0.05)))
 
     x_values = np.linspace(0, 2, 400)
     y_values = f(x_values)
 
     # 绘制图像
     plt.figure(figsize=(10, 6))
-    plt.plot(x_values, y_values, label=r'$f(x) = \frac{1}{1 + e^{-50(x - 0.95)}}$', color='blue')
+    plt.plot(x_values, y_values, color='blue')
     plt.title('Function Plot of $f(x)$')
     plt.xlabel('x')
     plt.ylabel('f(x)')
     plt.ylim(-0.1, 1.1)
     plt.axhline(0, color='grey', lw=0.5)
     plt.axvline(0, color='grey', lw=0.5)
-    plt.legend()
     plt.grid()
     plt.show()
 
@@ -896,8 +894,8 @@ class Worker():
             x1, x2, x3 = norm(new_order_state_temp,worker_state_temp,order_state_temp)
             current_state_value, price_mu, price_sigma = self.Q_training(x1,x2,x3,order_num_temp)
             # sigma_mean = torch.mean(price_sigma)
-            # entropy_loss = gaussian_entropy(price_sigma)
-            entropy_loss = 0
+            entropy_loss = gaussian_entropy(price_sigma)
+            # entropy_loss = 0
             current_state_value, price_mu, price_sigma = torch.diag(current_state_value),torch.diag(price_mu),torch.diag(price_sigma)
 
             if self.intelligent_worker:
@@ -915,7 +913,7 @@ class Worker():
             surr2 = torch.clamp(ratio,1-self.eps_clip,1+self.eps_clip) * advantage_temp
             actor_loss = torch.mean(-torch.min(surr1, surr2))
 
-            loss = actor_rate * (actor_loss + 0.005 * entropy_loss) + critic_loss
+            loss = actor_rate * (actor_loss + 0.001 * entropy_loss) + critic_loss
 
             self.optim.zero_grad()
             loss.backward()
@@ -1236,11 +1234,11 @@ def gaussian_entropy(sigma):
 
 if __name__ == '__main__':
     # test
-    worker=Worker(1000)
-    reservation_value = np.linspace(0.85, 1.15, 1000)
-    worker.reset(reservation_value=reservation_value)
-    import matplotlib.pyplot as plt
-    plt.plot(range(len(worker.positive_history)),worker.positive_history,'r')
-    plt.plot(range(len(worker.positive_history)),worker.negative_history,'b')
-    plt.show()
-    # plot_accept_rate()
+    # worker=Worker(1000)
+    # reservation_value = np.linspace(0.85, 1.15, 1000)
+    # worker.reset(reservation_value=reservation_value)
+    # import matplotlib.pyplot as plt
+    # plt.plot(range(len(worker.positive_history)),worker.positive_history,'r')
+    # plt.plot(range(len(worker.positive_history)),worker.negative_history,'b')
+    # plt.show()
+    plot_accept_rate()

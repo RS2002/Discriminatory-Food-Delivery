@@ -15,14 +15,13 @@ INF = 1e8
 
 # imitate the accept rate
 def accept_rate(price=1.0,reservation_value=1.0):
-    ratio = price / reservation_value
-    return 1/(1+math.exp(-50*(ratio-0.95)))
+    return 1/(1+math.exp(-50*(price-reservation_value+0.05)))
 
 def plot_accept_rate():
     import matplotlib.pyplot as plt
 
-    def f(x):
-        return 1 / (1 + np.exp(-50 * (x - 0.95)))
+    def f(x,r=1.0):
+        return 1/(1+np.exp(-50*(x-r+0.05)))
 
     x_values = np.linspace(0, 2, 400)
     y_values = f(x_values)
@@ -1018,8 +1017,8 @@ class Worker():
             x1, x2, x3 = norm(new_order_state_temp,worker_state_temp,order_state_temp)
             current_state_value, price_mu, price_sigma, _ = self.Q_training(x1,x2,x3,order_num_temp)
             # sigma_mean = torch.mean(price_sigma)
-            # entropy_loss = gaussian_entropy(price_sigma)
-            entropy_loss = 0
+            entropy_loss = gaussian_entropy(price_sigma)
+            # entropy_loss = 0
             current_state_value, price_mu, price_sigma = torch.diag(current_state_value),torch.diag(price_mu),torch.diag(price_sigma)
 
             if self.intelligent_worker:
@@ -1038,7 +1037,7 @@ class Worker():
             actor_loss = torch.mean(-torch.min(surr1, surr2))
 
             time_rate = 10.0
-            loss = actor_rate * (actor_loss + 0.005 * entropy_loss) + critic_loss + time_loss * time_rate
+            loss = actor_rate * (actor_loss + 0.001 * entropy_loss) + critic_loss + time_loss * time_rate
 
             self.optim.zero_grad()
             loss.backward()
@@ -1453,7 +1452,8 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
 
 
 def gaussian_entropy(sigma):
-    entropy = - 0.5 * torch.log(2 * torch.pi * (sigma ** 2)) - 0.5
+    entropy = 0.5 * torch.log(2 * torch.pi * (sigma ** 2)) + 0.5
+    entropy *= -1
     return torch.mean(entropy)
 
 def loss_mape(y_hat, y, epsilon = 1e-5):
@@ -1475,11 +1475,11 @@ def loss_sts(y_hat, y):
 
 if __name__ == '__main__':
     # test
-    worker=Worker(1000)
-    reservation_value = np.linspace(0.85, 1.15, 1000)
-    worker.reset(reservation_value=reservation_value)
-    import matplotlib.pyplot as plt
-    plt.plot(range(len(worker.positive_history)),worker.positive_history,'r')
-    plt.plot(range(len(worker.positive_history)),worker.negative_history,'b')
-    plt.show()
-    # plot_accept_rate()
+    # worker=Worker(1000)
+    # reservation_value = np.linspace(0.85, 1.15, 1000)
+    # worker.reset(reservation_value=reservation_value)
+    # import matplotlib.pyplot as plt
+    # plt.plot(range(len(worker.positive_history)),worker.positive_history,'r')
+    # plt.plot(range(len(worker.positive_history)),worker.negative_history,'b')
+    # plt.show()
+    plot_accept_rate()
