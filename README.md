@@ -1,6 +1,6 @@
 # Double PDF
 
-**Article:** "Double PDF: A Multi-action and Multi-agent Reinforcement Learning Framework for Order Dispatch and Salary Decision in Food Delivery" (under way)
+**Article:** Zijian Zhao, Sen Li*, "Discriminatory Order Assignment and Payment-Setting on Food-Delivery Platforms: A Multi-Action and Multi-Agent Reinforcement Learning Framework" (under review, Transportation Research: Part C)
 
 **Acknowledgement:** Some parts of the code is based on the work of [‪Yulong Hu‬‬](https://scholar.google.com/citations?user=IfVrhp0AAAAJ&hl=zh-CN&oi=ao).
 
