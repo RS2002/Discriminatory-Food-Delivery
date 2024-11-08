@@ -173,31 +173,14 @@ class Q_Net(nn.Module):
         q_matrix = self.attention(worker,order)
 
         price_mu_matrix = self.attention_price_mu(worker,order)
-        # price_mu_matrix = price_mu_matrix ** 2
         price_mu_matrix = self.sigmoid(price_mu_matrix) * 2
-        # price_mu_matrix = self.sigmoid(price_mu_matrix) + 0.5
-        # price_mu_matrix = self.relu(self.tanh(price_mu_matrix) + 0.5)
-        # price_mu_matrix = self.tanh(price_mu_matrix)
-        # price_mu_matrix = self.relu(price_mu_matrix)
-
 
         price_sigma_matrix = self.attention_price_sigma(worker,order)
-        # price_sigma_matrix = price_sigma_matrix ** 2 + 1e-8
-        # price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.1
-        # price_sigma_matrix = self.relu(price_sigma_matrix) + 1e-8
-        # price_sigma_matrix = self.softplus(price_sigma_matrix)
-        # price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.5
-        # price_sigma_matrix = self.softplus(price_sigma_matrix) * 0.5
-        # price_sigma_matrix = self.softplus(price_sigma_matrix) + 1e-5
-        price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.3 + 1e-5
-        # price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.5 + 1e-5
+        price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.2 + 1e-5
 
-        # price_sigma_matrix = self.sigmoid(price_sigma_matrix)
-        # price_sigma_matrix = price_sigma_matrix * price_mu_matrix + 1e-5
 
         time_prediction_mu = self.attention_time(worker,order)
         time_prediction_mu = self.relu(time_prediction_mu)
-        # time_prediction_mu = self.sigmoid(time_prediction_mu) * 60
         time_prediction_sigma = self.attention_time(worker,order)
         time_prediction_sigma = self.softplus(time_prediction_sigma)
 

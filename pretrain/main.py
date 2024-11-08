@@ -142,7 +142,7 @@ def main():
             if current_critic_episode == critic_episode:
                 current_critic_episode = 0
                 critic_phase = False
-                # worker.schedule.step()
+                worker.schedule.step()
 
             exploration_rate = max(exploration_rate * epsilon_decay_rate, epsilon_final)
             exploration_rate_temp = exploration_rate
@@ -169,7 +169,7 @@ def main():
             c_loss, a_loss, w_loss = worker.train_critic(args.batch_size, train_times, freeze)
         else:  # train actor
             buffer.reset()
-            worker.update_Qtarget(1.0)
+            # worker.update_Qtarget(1.0)
             if current_actor_episode < actor_episode:
                 current_actor_episode += 1
             if current_actor_episode == actor_episode:
