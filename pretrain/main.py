@@ -34,7 +34,7 @@ def get_args():
     parser.add_argument('--eval_episode', type=int, default=10)
     parser.add_argument('--critic_episode', type=int, default=4)
     parser.add_argument('--actor_episode', type=int, default=1)
-    parser.add_argument('--freeze_episode', type=int, default=50)
+    parser.add_argument('--freeze_episode', type=int, default=100)
     parser.add_argument("--freeze", action="store_true",default=False)
 
 
@@ -142,7 +142,7 @@ def main():
             if current_critic_episode == critic_episode:
                 current_critic_episode = 0
                 critic_phase = False
-                worker.schedule.step()
+                # worker.schedule.step()
 
             exploration_rate = max(exploration_rate * epsilon_decay_rate, epsilon_final)
             exploration_rate_temp = exploration_rate

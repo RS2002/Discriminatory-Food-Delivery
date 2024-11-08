@@ -175,7 +175,7 @@ class Q_Net(nn.Module):
 
 
         price_sigma_matrix = self.attention_price_sigma(worker,order)
-        price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.2 + 1e-5
+        price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.3 + 1e-5
 
         return q_matrix,price_mu_matrix,price_sigma_matrix
 

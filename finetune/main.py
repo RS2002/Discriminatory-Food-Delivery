@@ -140,7 +140,7 @@ def main():
             if current_critic_episode == critic_episode:
                 current_critic_episode = 0
                 critic_phase = False
-                worker.schedule.step()
+                # worker.schedule.step()
             exploration_rate = max(exploration_rate * epsilon_decay_rate, epsilon_final)
             exploration_rate_temp = exploration_rate
             print("Exploration Rate: ", exploration_rate_temp)

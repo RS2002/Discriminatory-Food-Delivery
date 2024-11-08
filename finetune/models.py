@@ -176,7 +176,7 @@ class Q_Net(nn.Module):
         price_mu_matrix = self.sigmoid(price_mu_matrix) * 2
 
         price_sigma_matrix = self.attention_price_sigma(worker,order)
-        price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.2 + 1e-5
+        price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.3 + 1e-5
 
 
         time_prediction_mu = self.attention_time(worker,order)

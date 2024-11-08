@@ -929,6 +929,7 @@ class Worker():
 
 
     def train_actor(self,episode,batch_size=512,train_times=10,actor_rate=1.0,freeze=False):
+        lamada = 0.9
 
         c_loss=[]
         a_loss=[]
@@ -962,7 +963,7 @@ class Worker():
         is_done = (delta_t == -1).float()
         td_target_target = reward + (self.gamma ** delta_t * next_state_value_target) * (1 - is_done)
         td_delta_target = td_target_target - current_state_value_target
-        advantage_target = calculate_advantage(td_delta_target, delta_t, worker_id, gamma=self.gamma, lamada=0.7)
+        advantage_target = calculate_advantage(td_delta_target, delta_t, worker_id, gamma=self.gamma, lamada=lamada)
 
         td_target_target2 = reward + (self.gamma ** delta_t * next_state_value_target2) * (1 - is_done)
         td_target_target = torch.min(td_target_target, td_target_target2)
@@ -984,12 +985,13 @@ class Worker():
             is_done = (delta_t == -1).float()
             td_target = reward + (self.gamma ** delta_t * next_state_value) * (1 - is_done)
             td_delta = td_target - current_state_value
-            advantage = calculate_advantage(td_delta, delta_t, worker_id, gamma=self.gamma, lamada=0.7)
+            advantage = calculate_advantage(td_delta, delta_t, worker_id, gamma=self.gamma, lamada=lamada)
 
-            # advantage = (advantage_target + advantage) / 2
-            advantage = 0.95 * advantage_target + 0.05 * advantage
-
+            advantage = 0.5 * advantage_target + 0.5 * advantage
             td_target = torch.min(td_target,td_target_target)
+
+            advantage_target = advantage
+            td_target_target = td_target
 
 
             # pbar = tqdm.tqdm(range(train_times))
