@@ -1,5 +1,7 @@
 # Double PDF
 
+The next version of this work will be published at [RS2002/FFD: Fair Food Delivery (github.com)](https://github.com/RS2002/FFD).
+
 **Article:** Zijian Zhao, Sen Li*, "Discriminatory Order Assignment and Payment-Setting on Food-Delivery Platforms: A Multi-Action and Multi-Agent Reinforcement Learning Framework" (under review, Transportation Research: Part C)
 
 **Acknowledgement:** Some parts of the code is based on the work of [‪Yulong Hu‬‬](https://scholar.google.com/citations?user=IfVrhp0AAAAJ&hl=zh-CN&oi=ao).
