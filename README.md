@@ -1,6 +1,6 @@
-# Double PDF
+# DOUBLE-PDF: DOUBLE Ppo and double Dqn for on-demand Food Delivery
 
-The next version of this work will be published at [FFD](https://github.com/RS2002/FFD), where we also implement a more stable version of this Double-PDF work as a benchmark.
+The next version of this work will be published at [GFD](https://github.com/RS2002/GFD), where we also implement a more stable version of this Double-PDF work as a benchmark.
 
 **Article:** Zijian Zhao, Sen Li*, "Discriminatory Order Assignment and Payment-Setting on Food-Delivery Platforms: A Multi-Action and Multi-Agent Reinforcement Learning Framework" (under review)
 
