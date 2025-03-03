@@ -235,7 +235,8 @@ def excute(observe, reservation_value, speed, current_order, current_order_num, 
                 time_add = np.sum(new_total_travel_time) - original_total_travel_time # total added time of all orders
 
                 # added workload
-                work_add = np.max(new_total_travel_time) - np.max(current_order[:, 3])
+                # work_add = np.max(new_total_travel_time) - np.max(current_order[:, 3])
+                work_add = np.max(new_time) + pickup_time[0] - np.max(current_order[:, 2])
                 # if len(new_total_travel_time)>1:
                 #     work_add = np.max(new_total_travel_time) - np.max(current_order[:,3])
                 # else:
