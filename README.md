@@ -8,6 +8,8 @@ The next version of this work will be published at [GFD](https://github.com/RS20
 
 
 
+**Please note there is a bug in detour time calculation and we will fix it later.**
+
 ## 1. Workflow
 
 ![](./img/main.png)
