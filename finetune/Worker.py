@@ -1423,6 +1423,7 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
     if observe_space[3] == 1: # pick up
         if observe_space[4] > step:
             observe_space[4] -= step
+            step = 0
         else: # finish picking up
             step -= observe_space[4]
             observe_space[4] = 0
