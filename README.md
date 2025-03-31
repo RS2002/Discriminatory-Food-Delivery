@@ -6,9 +6,13 @@ The next version of this work will be published at [GFD](https://github.com/RS20
 
 **Acknowledgement:** Some parts of the code is based on the work of [‪Yulong Hu‬‬](https://scholar.google.com/citations?user=IfVrhp0AAAAJ&hl=zh-CN&oi=ao).
 
+**Notice:**
 
+1. Please note there is a bug in detour time calculation and we will fix it later.
 
-**Please note there is a bug in detour time calculation and we will fix it later.**
+2. We have improved the model according to our latest work [Triple-BERT (a TD3-based method for ride pooling)](https://github.com/RS2002/Triple-BERT). The original version is in the `ori` folder.
+
+   
 
 ## 1. Workflow
 
