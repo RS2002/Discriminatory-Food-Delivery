@@ -525,7 +525,7 @@ class Worker():
                 target_param.data.copy_(tau * train_param.data + (1.0 - tau) * target_param.data)
 
 
-    def train_actor(self,episode,batch_size=512,train_times=10,actor_rate=1.0,freeze=False, show_pbar=False):
+    def train_actor(self,episode,batch_size=512,train_times=10,actor_rate=1.0,freeze=False, show_pbar=True):
         lamada = 0.9
 
         c_loss=[]
@@ -648,15 +648,20 @@ class Worker():
 
         self.update_Qtarget()
         # self.schedule.step()
+        torch.set_grad_enabled(False)
         return np.mean(c_loss), np.mean(a_loss), np.mean(worker_loss)
 
 
-    def train_critic(self,batch_size=512,train_times=30,freeze=False):
+    def train_critic(self,batch_size=512,train_times=30,freeze=False, show_pbar=False):
         c_loss = []
         a_loss = [0]
         worker_loss = [0]
 
-        pbar = tqdm.tqdm(range(train_times))
+        if show_pbar:
+            pbar = tqdm.tqdm(range(train_times))
+        else:
+            pbar = range(train_times)
+
         torch.set_grad_enabled(True)
         self.Q_training.train()
 
@@ -700,6 +705,7 @@ class Worker():
 
         self.update_Qtarget()
         # self.schedule.step()
+        torch.set_grad_enabled(False)
         return np.mean(c_loss), np.mean(a_loss), np.mean(worker_loss)
 
 

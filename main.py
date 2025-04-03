@@ -162,7 +162,7 @@ def main():
                               new_total_travel_time_table, worker_feed_back_table, t, (t == args.max_step - 1), j)
                 demand.pickup(accepted_orders)
                 demand.update()
-                if t % 3 == 0:
+                if (t+1) % 4 == 0 and buffer.num>args.batch_size:
                     c_loss, a_loss, w_loss = worker.train_critic(args.batch_size, 1, freeze)
             # c_loss, a_loss, w_loss = worker.train_critic(args.batch_size, train_times, freeze)
         else:  # train actor
