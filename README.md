@@ -1,16 +1,14 @@
 # DOUBLE-PDF: DOUBLE Ppo and double Dqn for on-demand Food delivery
 
-The next version of this work will be published at [GFD](https://github.com/RS2002/GFD), where we also implement a more stable version of this Double-PDF work as a benchmark.
-
-**Article:** Zijian Zhao, Sen Li*, "Discriminatory Order Assignment and Payment-Setting on Food-Delivery Platforms: A Multi-Action and Multi-Agent Reinforcement Learning Framework" (under review)
+**Article:** Zijian Zhao, Sen Li*, "Discriminatory Order Assignment and Payment-Setting on Food-Delivery Platforms: A Multi-Action and Multi-Agent Reinforcement Learning Framework" (under revise)
 
 **Acknowledgement:** Some parts of the code is based on the work of [‪Yulong Hu‬‬](https://scholar.google.com/citations?user=IfVrhp0AAAAJ&hl=zh-CN&oi=ao).
 
 **Notice:**
 
-1. Please note there is a bug in detour time calculation and we will fix it later.
+1. We have improved the model according to our latest work [Triple-BERT](https://github.com/RS2002/Triple-BERT). The original version is in the `ori` folder.
 
-2. We have improved the model according to our latest work [Triple-BERT (a TD3-based method for ride pooling)](https://github.com/RS2002/Triple-BERT). The original version is in the `ori` folder.
+3. The new version of this work will be released at [GFD](https://github.com/RS2002/GFD).
 
    
 
