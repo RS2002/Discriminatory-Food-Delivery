@@ -2,7 +2,7 @@
 
 **Article:** Zijian Zhao, Sen Li*, "Discriminatory Order Assignment and Payment-Setting on Food-Delivery Platforms: A Multi-Action and Multi-Agent Reinforcement Learning Framework" (under revise)
 
-**Notice: ** We have updated the code in line with our recent work, "The Impacts of Data Privacy Regulations on Food-Delivery Platforms." You can access the latest code and find instructions on how to run it at the [RS2002/DFD: Official Repository for The Paper, The Impacts of Data Privacy Regulations on Food-Delivery Platforms (github.com)](https://github.com/RS2002/DFD) .
+**Notice:** We have updated the code in line with our recent work, "The Impacts of Data Privacy Regulations on Food-Delivery Platforms." You can access the latest code and find instructions on how to run it at the [RS2002/DFD: Official Repository for The Paper, The Impacts of Data Privacy Regulations on Food-Delivery Platforms (github.com)](https://github.com/RS2002/DFD) .
 
 **Acknowledgement:** Some parts of the code is based on the work of [‪Yulong Hu‬‬](https://scholar.google.com/citations?user=IfVrhp0AAAAJ&hl=zh-CN&oi=ao).
 
