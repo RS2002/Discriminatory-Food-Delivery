@@ -1,6 +1,6 @@
 # DOUBLE-PDF: DOUBLE Ppo and double Dqn for on-demand Food delivery
 
-**Article:** Zijian Zhao, Sen Li*, "Discriminatory Order Assignment and Payment-Setting on Food-Delivery Platforms: A Multi-Action and Multi-Agent Reinforcement Learning Framework" (under revise)
+**Article:** Zijian Zhao, Sen Li*, "Discriminatory Order Assignment and Payment-Setting on Food-Delivery Platforms: A Multi-Action and Multi-Agent Reinforcement Learning Framework" (under review)
 
 **Notice:** We have updated the code in line with our recent work, "The Impacts of Data Privacy Regulations on Food-Delivery Platforms." You can access the latest code and find instructions on how to run it at the [RS2002/DFD: Official Repository for The Paper, The Impacts of Data Privacy Regulations on Food-Delivery Platforms (github.com)](https://github.com/RS2002/DFD) .
 
