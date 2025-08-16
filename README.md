@@ -2,9 +2,9 @@
 
 **Article:** Zijian Zhao, Sen Li*, "Discriminatory Order Assignment and Payment-Setting on Food-Delivery Platforms: A Multi-Action and Multi-Agent Reinforcement Learning Framework" (under review)
 
-**Notice:** We have updated the code in line with our recent work, "The Impacts of Data Privacy Regulations on Food-Delivery Platforms." You can access the latest code and find instructions on how to run it at the [RS2002/DFD: Official Repository for The Paper, The Impacts of Data Privacy Regulations on Food-Delivery Platforms (github.com)](https://github.com/RS2002/DFD) .
+**Notice:** We have updated the code in line with our recent work, "The Impacts of Data Privacy Regulations on Food-Delivery Platforms". You can access the latest code and find instructions on how to run it at the [RS2002/GDPR-Food-Delivery: Official Repository for The Paper, The Impacts of Data Privacy Regulations on Food-Delivery Platforms](https://github.com/RS2002/GDPR-Food-Delivery#).
 
-**Acknowledgement:** Some parts of the code is based on the work of [‪Yulong Hu‬‬](https://scholar.google.com/citations?user=IfVrhp0AAAAJ&hl=zh-CN&oi=ao).
+**Acknowledgement:** Some parts of the code (simulator part) is based on the work of [‪Yulong Hu‬‬](https://scholar.google.com/citations?user=IfVrhp0AAAAJ&hl=zh-CN&oi=ao).
 
 ## 1. Workflow
 
@@ -13,8 +13,6 @@
 
 
 ![](./img/network.png)
-
-
 
 ## 2. Dataset 
 
@@ -30,7 +28,11 @@ Our dataset consists of one hour of food delivery data in Hong Kong, China, cont
 
 As you can see, there is no ground truth for salary information. Therefore, we simply set the reservation value to range from 0.85 to 1.15, without a specific unit.
 
-## 3. Citation
+## 3. Simulator
+
+For route planning, we utilize the [Project-OSRM/osrm-backend: Open Source Routing Machine - C++ backend](https://github.com/Project-OSRM/osrm-backend).
+
+## 4. Citation
 
 ```
 
