@@ -2,11 +2,11 @@
 
 **Article:** 
 
-Journal Version: Zijian Zhao, Sen Li*, "Discriminatory Order Assignment and Payment-Setting on Food-Delivery Platforms: A Multi-Action and Multi-Agent Reinforcement Learning Framework" (under review)
+Journal Version: Zijian Zhao, Sen Li*, "Discriminatory Order Assignment and Payment-Setting on Food-Delivery Platforms: A Multi-Action and Multi-Agent Reinforcement Learning Framework"，Transportation Research Part E: Logistics and Transportation Review (TR\_E), 2025
 
 Conference Version: Zijian Zhao, Sen Li*, "[Multi-Agent Reinforcement Learning for Order Assignment and Payment Setting on Food-Delivery Platforms: The Implicit Algorithmic Biases](https://zijianzhao.netlify.app/publication/pdf-conf/)", ISTDM 2025
 
-**Notice:** We have updated the code in line with our recent work, "[The Impacts of Data Privacy Regulations on Food-Delivery Platforms](https://www.sciencedirect.com/science/article/pii/S0968090X25003687)" (Transportation Research Part C 2025). You can access the new-version code and find instructions on how to run it at the [GDPR-Food-Delivery: Official Repository for The Paper, The Impacts of Data Privacy Regulations on Food-Delivery Platforms](https://github.com/RS2002/GDPR-Food-Delivery). The latest version will be provided at [AV-Food-Delivery](https://github.com/RS2002/AV-Food-Delivery/tree/main/baseline)
+**Notice:** We have updated the code in line with our recent work, "[The Impacts of Data Privacy Regulations on Food-Delivery Platforms](https://www.sciencedirect.com/science/article/pii/S0968090X25003687)" (Transportation Research Part C 2025). You can access the new-version code and find instructions on how to run it at the [GDPR-Food-Delivery](https://github.com/RS2002/GDPR-Food-Delivery). The latest version will be provided at [AV-Food-Delivery](https://github.com/RS2002/AV-Food-Delivery/tree/main/baseline)
 
 **Acknowledgement:** Some parts of the code (simulator part) is based on the work of [‪Yulong Hu‬‬](https://scholar.google.com/citations?user=IfVrhp0AAAAJ&hl=zh-CN&oi=ao).
 
